@@ -1,7 +1,10 @@
 //
 // Created by jonossar on 3/14/24.
 //
+#include <boost/thread.hpp>
 #include "../include/KernelFunctions.cuh"
+#include "../include/Preprocessor.h"
+
 #define IMG1_KERNELFUNCTIONS_IMPLEMENTATION
 //#define INLINE __forceinline__
 
@@ -62,30 +65,16 @@ namespace KernelFunctions {
 
         return oldValue;
     }
-    template<typename I, typename O, typename K, typename A>
-    __global__  void
-    kernelLoopWrapper(I *in, O *out, K *kernel, A * alg, const unsigned int x, const unsigned int y,
-                      const unsigned int kernelDim) {
-        const unsigned int idx_y=(threadIdx.y + blockIdx.y*blockDim.y);
-        const unsigned int idx_x=threadIdx.x + blockIdx.x*blockDim.x;
-        if (idx_y >= y || idx_x>=x) return;
-        const unsigned int flatIdx=idx_y*x+idx_x;
-        for(unsigned int i=0; i<kernelDim; i++) {
-            for (unsigned int j = 0; j < kernelDim; j++) {
-                int y_pos = (int) idx_y + i - kernelDim / 2;
-                int x_pos = (int) idx_x + j - kernelDim / 2;
-                x_pos = x_pos >= 0 ? (x_pos < x ? x_pos : (x - 1)) : 0;
-                y_pos = y_pos >= 0 ? (y_pos < y ? y_pos : (y - 1)) : 0;
-                alg->run(flatIdx, y_pos * x + x_pos, i * kernelDim + j, in, out, kernel);
-            }
-        }
-        alg->post(flatIdx,out);
+    template<typename I, typename O>
+    using kernelFunction =  void (*)(I*, O*, unsigned int, unsigned int, unsigned int idx_x, unsigned int idx_y);
+    template<typename I,typename O>
+    __global__ void wrapper(kernelFunction<I,O> f,I* inGpu, O* outGpu, unsigned int x, unsigned int y){
+        f(inGpu, outGpu, x, y, threadIdx.x + blockIdx.x*blockDim.x,threadIdx.y + blockIdx.y*blockDim.y);
     }
-
-    template<typename I, typename O, typename K, typename A>
+    template<typename I, typename O>
     __host__ O *
-    kernelFunctionsWrapper(I *in, K *kernel, A algo, const unsigned int x, const unsigned int y, const unsigned int z,
-                           const unsigned int outSize, const unsigned int kernelDim) {
+    kernelFunctionsWrapper(I *in,void(* func)(I*,O*, unsigned int, unsigned int), const unsigned int x, const unsigned int y, const unsigned int z,
+                           const unsigned int outSize, const unsigned int sharedMem) {
         dim3 threads(KERNEL_THREADS, KERNEL_THREADS, 1);
         double x2=Common::roundP2( x);
         double y2=Common::roundP2( y);
@@ -96,157 +85,109 @@ namespace KernelFunctions {
         dim3 blocks(d1, d2, 1);
         O *outGpu;
         I *inGpu;
-        K *kernelGpu;
-        A *algoGpu;
-        cudaStream_t stream;
-        gc(cudaStreamCreate(&stream));
-        algo.prepare(x*y);
-        gc(cudaGetLastError());
-        gc(cudaMalloc(&algoGpu, sizeof(A)));
-        gc(cudaMemcpy(algoGpu, &algo, sizeof(A), cudaMemcpyHostToDevice));
-        int kernelSize = (int) round(pow(kernelDim, 2));
+        kernelFunction<I,O> f;
+        cudaMalloc(&f, sizeof(func));
+        cudaMemcpy(&f, &func, sizeof(kernelFunction<I,O>), cudaMemcpyHostToDevice);
         gc(cudaMalloc(&(outGpu), outSize * sizeof(O)));
         gc(cudaMemset(outGpu,  0, outSize * sizeof(O)));
-        if (kernel != nullptr) {
-            gc(cudaMalloc(&kernelGpu, (kernelSize) * sizeof(double)));
-            gc(cudaMemcpy(kernelGpu, kernel, kernelSize * sizeof(double), cudaMemcpyHostToDevice));
-        }
         gc(cudaMalloc(&inGpu, x * y * z * sizeof(I)));
         gc(cudaMemcpy(inGpu, in, x * y * z * sizeof(I), cudaMemcpyHostToDevice));
-        gc(cudaStreamSynchronize(stream));
-//        cudaDeviceSynchronize();
-        kernelLoopWrapper<I, O, K, A> <<<blocks, threads>>>(inGpu, outGpu, kernelGpu, algoGpu, x, y,
-                                                             kernelDim > 0 ? kernelDim : 1);
-//        cudaDeviceSynchronize();
-        gc(cudaStreamSynchronize(stream));
-        gc(cudaStreamDestroy(stream));
+        gc(cudaStreamSynchronize(thisStream));
+        wrapper<<<blocks, threads,sharedMem,thisStream>>>(f,inGpu, outGpu, x,y);
+        gc(cudaStreamSynchronize(thisStream));
         cudaError err = cudaGetLastError();
-//        printf("%s::%d::%d\n", cudaGetErrorString(err), outSize, kernelSize);
         O *out = new O[outSize];
         gc(cudaMemcpy(out, outGpu, outSize * sizeof(O), cudaMemcpyDeviceToHost));
         gc(cudaFree(outGpu));
         gc(cudaFree(inGpu));
-        if (kernel != nullptr)
-            gc(cudaFree(kernelGpu));
-        algo.destroy();
-        gc(cudaFree(algoGpu));
         return out;
     }
-     INLINE __host__ void distribution::prepare(const unsigned int s) {
-        gc(cudaMalloc(&(this->sum), s * sizeof(double)));
-        gc(cudaMemset((this->sum), 0, s * sizeof(double)));
+    static INLINE __device__ float * closestMean(unsigned char in, float * means, const unsigned int len){
+        float val=FLT_MAX;
+        float * ret;
+        for(unsigned int i=0; i<len; i++){
+            float dist=abs(means[i] - in);
+            val=val>dist?dist:val;
+            ret=&means[i];
+        }
+        return ret;
     }
-    INLINE __device__ void
-    distribution::run(const unsigned int i, const unsigned int k, const unsigned int j, const unsigned char *in,
-                      unsigned int *out, const double *kernel) {
-        atomicAdd(&sum[i], in[k] * kernel[j]);
+    static INLINE __device__ bool isLowerMean(float * mean, float * means, const unsigned int len){
+        bool ret=true;
+        for(unsigned int i=0; i<len; i++){
+            if(*mean>means[i]) ret=false;
+        }
+        return ret;
     }
-    INLINE __device__ void distribution::post(const unsigned int i, unsigned int *out) {
-        atomicAdd(&out[(int) (sum[i] <= 255.0 ? sum[i] : 255.0)], 1);
+    __device__ void cluster(float *means, const unsigned int len,unsigned char* in, unsigned char* out, unsigned int x, unsigned int y){
+        const unsigned int flatIdx=(threadIdx.y + blockIdx.y*blockDim.y)*x + threadIdx.x + blockIdx.x*blockDim.x;
+        if(flatIdx>=x*y) return;
+        if(isLowerMean(closestMean(in[flatIdx], means, len),means, len)) out[flatIdx]=0;
+        else out[flatIdx]=255;
     }
-    INLINE __host__ void distribution:: destroy(){
-        gc(cudaFree(sum));
+    __device__ void grayScale(unsigned char * in, unsigned char * out,unsigned int x, unsigned int y){
+        const unsigned int flatIdx=(threadIdx.y + blockIdx.y*blockDim.y)*x + threadIdx.x + blockIdx.x*blockDim.x;
+        if(flatIdx>=x*y) return;
+        atomicAddChar((char*)&out[flatIdx],(char) in[flatIdx*3] + in[flatIdx*3+1] + in[flatIdx*3+2]);
     }
-    __host__ void erode::prepare(unsigned int s) {
-        gc(cudaMalloc(&flag, s * sizeof(bool)));
-        gc(cudaMemset(flag, false, s * sizeof(bool)));
+    __device__ void distribution(unsigned char* in, unsigned int* out, unsigned int x, unsigned int y){
+        const unsigned int flatIdx=(threadIdx.y + blockIdx.y*blockDim.y)*x + threadIdx.x + blockIdx.x*blockDim.x;
+        if(flatIdx>=x*y) return;
+        atomicAdd(&out[in[flatIdx]],1);
     }
-    INLINE __host__ void erode::destroy(){
-        gc(cudaFree(flag));
-    }
-    INLINE __device__ void
-    erode::run(const unsigned int i, const unsigned int k, const unsigned int j, const unsigned char *in,
-               unsigned char *out, const double *kernel) {
-        if (in[k] == 255)
-            flag[i] = true;
-    }
-    INLINE __device__ void erode::post(const unsigned int i, unsigned char *out) {
-        if (flag[i]) atomicCASChar((uint8_t *) &(out[i]), (uint8_t) out[i], (uint8_t) 255);
-        else atomicCASChar((uint8_t *) &(out[i]), (uint8_t) out[i], (uint8_t) 0);
-    }
-    __host__ void dilate::prepare(unsigned int s) {
-        gc(cudaMalloc(&flag, s * sizeof(bool)));
-        gc(cudaMemset(flag, false, s * sizeof(bool)));
-    }
-    INLINE __device__ void
-    dilate::run(const unsigned int i, const unsigned int k, const unsigned int j, const unsigned char *in,
-                unsigned char *out, const double *kernel) {
-        if (in[k] == 0)
-            flag[i] = true;
-    }
-    INLINE __device__ void dilate::post(const unsigned int i, unsigned char *out) {
-        if (flag[i]) atomicCASChar((uint8_t *) &(out[i]), (uint8_t) out[i], (uint8_t) 0);
-        else atomicCASChar((uint8_t *) &(out[i]), (uint8_t) out[i], (uint8_t) 255);
-    }
-    INLINE __host__ void dilate::destroy(){
-       gc(cudaFree(flag));
-    }
-    __host__ void grayScale::prepare(unsigned int s) {
-    }
-    INLINE __host__ void grayScale::destroy(){}
-    INLINE __device__ void
-    grayScale::run(const unsigned int i, const unsigned int k, const unsigned int j, const unsigned char *in,
-                   unsigned char *out, const double *kernel) {
-        char val= (char)(in[i * 3] * 0.21 + in[i * 3 + 1]* 0.72 + in[i * 3 + 2]* 0.07);
-        atomicAddChar((char *) &out[i], val);
-    }
-    INLINE __device__ void grayScale::post(const unsigned int i, unsigned char *out) {}
-
-    INLINE __host__ void gaussianMean::prepare(unsigned int s) {
-        gc(cudaMalloc(&sum, s * sizeof(double)));
-        gc(cudaMemset(sum, 0.0, s * sizeof(double)));
-        Common::Mean *tmp=means;
-        gc(cudaMalloc(&means, sizeof(Common::Mean) * len));
-        gc(cudaMemcpy(means, tmp, sizeof(Common::Mean) * len, cudaMemcpyHostToDevice));
-    }
-    INLINE __host__ void gaussianMean::destroy() {
-        gc(cudaFree((means)));
-        gc(cudaFree((sum)));
-    }
-    __host__ gaussianMean::gaussianMean(Common::Mean *means, unsigned int size) {
-        this->means = means;
-        this->len = size;
-    }
-    INLINE __device__ void
-    gaussianMean::run(const unsigned int i, const unsigned int k, const unsigned int j, const unsigned char *in,
-                      unsigned char *out, const double *kernel) {
-        atomicAdd(&sum[i], in[k] * kernel[j]);
-    }
-    INLINE __device__ void gaussianMean::post(const unsigned int i, unsigned char *out) {
-        atomicExch(reinterpret_cast<float *>(&sum[i]), sum[i] <= 255.0 ? (sum[i] >= 0.0 ? sum[i] : 0.0) : 255.0);
-        atomicCASChar(&out[i], out[i], (uint8_t) (isHigherMean(closestMean(sum[i])) ? 255 : 0));
-    }
-    INLINE __device__ bool gaussianMean::isScarceMean(Common::Mean *mean) {
-        for (int i = 0; i < len; i++)
-            if (mean->countSum < means[i].countSum)
-                return false;
-        return true;
-    }
-    INLINE __device__ bool gaussianMean::isHigherMean(Common::Mean *mean) {
-        for (int i = 0; i < len; i++)
-            if (mean->finalSum < means[i].finalSum)
-                return false;
-        return true;
-    }
-    INLINE __device__ Common::Mean *gaussianMean::closestMean(double value) {
-        Common::Mean *closest = nullptr;
-        auto closestValue = (double) 256;
-        for (int i = 0; i < len; i++)
-            if (abs(value - means[i].finalSum) < closestValue) {
-                closest = &means[i];
-                closestValue = abs(value - means[i].finalSum);
+    __device__ void dilate(const unsigned int kernelDim,unsigned char* in, unsigned char* out, unsigned int x, unsigned int y){
+        const unsigned int idx_x=threadIdx.x + blockIdx.x*blockDim.x;
+        const unsigned int idx_y=threadIdx.y + blockIdx.y*blockDim.y;
+        if(idx_y>=y || idx_x >=x) return;
+        for(int y=0; y<kernelDim; y++)
+            for(int x=0; x<kernelDim; x++){
+                if(in[(idx_y+y)*x + idx_x+x]==(unsigned char)0){
+                    out[idx_y*x+ idx_x]=0;
+                    return;
+                }
             }
-        return closest;
+        out[idx_y*x + idx_x]=(unsigned char)255;
     }
-    template __global__ void kernelLoopWrapper<unsigned char, unsigned char, double, KernelFunctions::gaussianMean>(unsigned char*, unsigned char*, double*, struct KernelFunctions::gaussianMean*, const unsigned int,const unsigned int,const unsigned int );
-    template __global__ void kernelLoopWrapper<unsigned char ,unsigned char , double,KernelFunctions::dilate> (unsigned char*, unsigned char*, double *,struct KernelFunctions::dilate*, const unsigned int, const unsigned int, const unsigned int);
-    template __global__ void kernelLoopWrapper<unsigned char, unsigned char ,double,KernelFunctions::erode> (unsigned char* , unsigned char* , double *,struct KernelFunctions::erode* , const unsigned int, const unsigned int, const unsigned int);
-    template __global__ void kernelLoopWrapper<unsigned char, unsigned int , double,KernelFunctions::distribution> (unsigned char* ,unsigned int*, double *,struct KernelFunctions::distribution*, const unsigned int, const unsigned int, const unsigned int);
-    template __global__ void kernelLoopWrapper<unsigned char, unsigned char, double, KernelFunctions::grayScale>(unsigned char *, unsigned char*,double*, struct grayScale*, const unsigned int, const unsigned int, const unsigned int);
-    template __host__ unsigned char * kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::grayScale>(unsigned char *, double *, struct KernelFunctions::grayScale , const unsigned int, const unsigned int, const unsigned int, const unsigned int, const unsigned int);
-    template __host__ unsigned char * kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::dilate>(unsigned char *, double *, struct KernelFunctions::dilate , const unsigned int, const unsigned int, const unsigned int, const unsigned int, const unsigned int);
-    template __host__ unsigned char * kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::erode>(unsigned char *, double *, struct KernelFunctions::erode , const unsigned int, const unsigned int, const unsigned int, const unsigned int, const unsigned int);
-    template __host__ unsigned char * kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::gaussianMean>(unsigned char *, double *, struct KernelFunctions::gaussianMean , const unsigned int, const unsigned int, const unsigned int, const unsigned int, const unsigned int);
-    template __host__ unsigned int * kernelFunctionsWrapper<unsigned char, unsigned int, double, KernelFunctions::distribution>(unsigned char *, double *, struct KernelFunctions::distribution , const unsigned int, const unsigned int, const unsigned int, const unsigned int, const unsigned int);
+     __device__ void erode(const unsigned int kernelDim,unsigned char* in, unsigned char* out, unsigned int x, unsigned int y){
+        const unsigned int idx_x=threadIdx.x + blockIdx.x*blockDim.x;
+        const unsigned int idx_y=threadIdx.y + blockIdx.y*blockDim.y;
+        if(idx_y>=y || idx_x >=x) return;
+        for(int y=0; y<kernelDim; y++)
+            for(int x=0; x<kernelDim; x++){
+                if(in[(idx_y+y)*x + idx_x+x]==(unsigned char)255){
+                    out[idx_y*x+ idx_x]=255;
+                    return;
+                }
+            }
+        out[idx_y*x + idx_x]=(unsigned char)0;
+    }
+    static __global__ void _gaussian(const unsigned int i, const unsigned int dim,const unsigned int sigma,const bool vertical,const unsigned char* in, float *out, const unsigned int x, const unsigned int y){
+        __shared__ float sum;
+        const unsigned int idx=threadIdx.x + blockIdx.x*blockDim.x;
+        if(idx>dim) return;
+        if(idx==0) sum=0;
+        __syncthreads();
+        if(i + idx*vertical?x:1 > x*y) return;
+        atomicAdd(&sum, in[i + idx*vertical?x:1]*(1/(sigma* sqrt(2*M_PI)))*(1/(exp(pow(idx,2)/(2*pow(sigma,2))))));
+        __syncthreads();
+        if(idx==0) {
+            sum=sum>255?255:sum;
+            atomicExch(&out[i + idx*vertical?x:1], sum);
+        }
+    }
+    __device__ void gaussian(const unsigned int kernelDim,const unsigned int sigma, unsigned char *in, unsigned char* out, unsigned int x, unsigned int y ){
+        const unsigned int flatIdx=(threadIdx.y + blockIdx.y*blockDim.y)*x + threadIdx.x + blockIdx.x*blockDim.x;
+        if(flatIdx>=x*y) return;
+        float * xMean;
+        float * yMean;
+        cudaMalloc(&xMean, sizeof(float));
+        dim3 kernelThreads(kernelDim, 1,1);
+        _gaussian<<<1,kernelThreads, sizeof(float)>>>(flatIdx, kernelDim,sigma, false, in, xMean, x,y);
+        cudaMalloc(&yMean, sizeof(float ));
+        _gaussian<<<1, kernelThreads, sizeof(float), cudaStreamTailLaunch>>>(flatIdx, kernelDim,sigma, true, in, yMean,x,y);
+        atomicAddChar((char*)&out[flatIdx], (char)(*xMean)*(*yMean));
+    }
+    template unsigned int* KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned int>(unsigned char*, void (*)(unsigned char*, unsigned int*, unsigned int, unsigned int), unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+    template unsigned char* KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char>(unsigned char*, void (*)(unsigned char*, unsigned char*, unsigned int, unsigned int), unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
 }
 

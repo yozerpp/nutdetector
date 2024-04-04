@@ -21,13 +21,24 @@
 #define TESTING_DIR (char *) "./test/"
 namespace Model {
 //void train(Image * data, const char * label);
-void train(const char* trainDir);
-Image * infer(Image * data);
-    enum Normalization{
+    void train(const char* trainDir);
+    Image * infer(Image * data);
+    enum NormalizationMethod{
         MINMAX,
         STANDARD,
         NONE
     };
+    enum NormalizationScope{
+        ALL,
+        LABEL
+    };
+    enum AveragingMethod{
+        STRAIGHT,
+        WEIGHTED
+    };
+    inline NormalizationMethod normalizationMode= NormalizationMethod::MINMAX;
+    inline NormalizationScope normalizationScope=NormalizationScope::LABEL;
+    inline AveragingMethod averagingMethod=AveragingMethod::STRAIGHT;
 };
 
 

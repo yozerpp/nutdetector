@@ -8,8 +8,9 @@
 #include <boost/thread.hpp>
 
 namespace Model{
+    using namespace std;
     using json=nlohmann::json;
-    Normalization normalization= Normalization::MINMAX;
+
     Preprocessing::Preprocessor * preprocessor=new Preprocessing::Preprocessor(2,256);
     long double * trainOne(Image * sample){
         preprocessor->polarize(sample, Preprocessing::GAUSSIAN);
@@ -60,7 +61,7 @@ namespace Model{
         delete[] std_dev;
     }
     void minmax(std::map<std::string, long double *>& results,json * data){
-        auto * featuresMax=Common::initializeArray((long double ) 0.0, FEATURES_LENGTH);
+        auto * featuresMax=Common::initializeArray((long double ) DBL_MIN, FEATURES_LENGTH);
         auto * featuresMin=Common::initializeArray((long double) DBL_MAX, FEATURES_LENGTH);
         for(auto& pair:results){
             for (int j=0;j<FEATURES_LENGTH; j++){
@@ -81,7 +82,7 @@ namespace Model{
         delete[] featuresMax;
     }
     void normalize(std::map<std::string,long double *>& results, json* data){
-        switch(normalization){
+        switch(normalizationMode){
             case STANDARD:
                 standardize(results, data);
                 break;
@@ -92,21 +93,137 @@ namespace Model{
                 break;
         }
     }
+    void standardAll(map<string, vector<long double *>>& data, json* modelData){
+        json metadata=modelData->operator[]("metadata");
+        long double* means=Common::initializeArray((long double) 0, FEATURES_LENGTH);
+        long double *std_dev=Common::initializeArray((long double) 0, FEATURES_LENGTH);
+        for(int i=0; i<FEATURES_LENGTH; i++) {
+            unsigned int count=0;
+            for (auto &pair: data) {
+                for (auto& feature: pair.second) {
+                    means[i]+=feature[i];
+                    count++;
+                }
+            }
+            means[i]/=count;
+            metadata["mean"].push_back(means[i]);
+            for(auto&pair : data){
+                for(auto& feature: pair.second){
+                    std_dev[i]+=pow(feature[i]-means[i],2);
+                }
+            }
+            std_dev[i]=sqrt(std_dev[i]/count);
+            metadata["deviation"].push_back(std_dev[i]);
+            for(auto& pair:data){
+                for(auto feature:pair.second){
+                    feature[i]=(feature[i]-means[i])/std_dev[i];
+                }
+            }
+        }
+    }
+    void normalizeAll(map<string, vector<long double *>>& data, json* modelData){
+        switch (normalizationMode) {
+            case STANDARD:
+                standardAll(data, modelData);
+                break;
+            case MINMAX:
+                cout << "not implemented";
+                break;
+            case NONE:
+            default:;
+        }
+    }
+    template <typename T>
+    static inline vector<T>  toVector(T* arr, unsigned int len){
+        vector<T> ret=vector<T>();
+        for(unsigned int i=0; i<len; i++){
+            ret.push_back(arr[i]);
+        }
+        return ret;
+    }
+
+    map<string, long double *> averageStraight(map<string, vector<long double *>>& data){
+        map<string, long double *> ret{};
+        for(auto&pair:data) {
+            auto *average = Common::initializeArray((long double)0, FEATURES_LENGTH);
+            for(int i=0; i<FEATURES_LENGTH;i++){
+                for (auto features: pair.second) {
+                    average[i] += features[i];
+                }
+                average[i]/=pair.second.size();
+            }
+            ret.insert_or_assign(pair.first, average);
+        }
+        return ret;
+    }
+    map<string, long double *> weightedAverage(map<string, vector<long double *>>& data){
+        map<string, long double *> ret{};
+        for(auto& pair:data){
+            auto * avg=Common::initializeArray((long double)0, FEATURES_LENGTH);
+
+            for(int i=0; i<FEATURES_LENGTH; i++){
+                for(auto& features:pair.second){
+                    avg[i]+=features[i];
+//                    mins[i]=mins[i]>features[i]?features[i]:mins[i];
+//                    max[i]=max[i]<features[i]?features[i]:max[i];
+                }
+                avg[i]/=pair.second.size();
+            }
+            auto * weightedSum=Common::initializeArray((long double) 0, FEATURES_LENGTH);
+            auto * weightTotal=Common::initializeArray((long double) 0, FEATURES_LENGTH);
+            for(int i=0; i<FEATURES_LENGTH; i++){
+                 for(auto& features:pair.second){
+                    weightTotal[i]+=1/(features[i]-avg[i]);
+                    weightedSum[i]+=features[i]*weightTotal[i];
+                }
+                 for(auto&features: pair.second){
+                     weightedSum[i]/=weightTotal[i];
+                 }
+            }
+            ret.insert_or_assign(pair.first, weightedSum);
+        }
+        return ret;
+    }
+    map<string, long double *> average(map<string, vector<long double *>>& data){
+        switch (averagingMethod) {
+            case WEIGHTED:
+                return weightedAverage(data);
+                break;
+            case STRAIGHT:
+            default:
+                return averageStraight(data);
+                break;
+        }
+    }
     void train(const char * trainDir){
         json data;
-        std:: map<std::string,long double *> results{};
+        std:: map<std::string,std::vector<long double *>> results{};
         int idx=1;
+        std::map<std::string, long double **> trainingData{};
         for(const auto &file: std::filesystem::directory_iterator(trainDir)){
             auto * image = new Image(file.path().c_str());
-            printf("\n---%d. Learning: %s---\n", idx++, image->fileName.fileBaseName.c_str());
-            auto * res=trainOne(image);
-           results.insert_or_assign(image->fileName.fileBaseName, res);
+            std::cout << std::endl << "---" + std::to_string(idx++) +". Learning: " + image->fileName.fileBaseName + "---" << std::endl;
+            preprocessor->polarize(image);
+            auto * detector= new Detector(image);
+            unsigned int numObjects;
+            Common::ObjectLabel * objects=detector->detect(&numObjects);
+            auto ** featuresAll= FeatureExtractor::extractFeatures(objects, image, numObjects);
+            results.insert_or_assign(image->fileName.fileBaseName, toVector<long double *>(featuresAll, numObjects));
            image->save(OUTPUT_DIR);
+           delete [] featuresAll;
+            delete detector;
             delete[] image->data;
             delete image;
         }
-        normalize(results, &data);
-        for(auto& pair:results){
+        map<string, long double *> finalResults;
+        if(normalizationScope==ALL) {
+            normalizeAll(results, &data);
+            finalResults = average(results);
+        } else {
+            finalResults= average(results);
+            normalize(finalResults, &data);
+        }
+        for(auto& pair:finalResults){
             std::cout<< pair.first << std::endl;
             for(int j=0;j<FEATURES_LENGTH; j++){
                 std::cout << std::setprecision(15) << std::scientific << pair.second[j] << std::endl;
@@ -162,7 +279,7 @@ namespace Model{
         }
     }
     void normalize(long double * features, json& data){
-        switch (normalization) {
+        switch (normalizationMode) {
             case MINMAX:
                 minmax(features, data);
                 break;
@@ -188,7 +305,6 @@ namespace Model{
             normalize(featuresAll[i], data);
             labels[i]= findClosest(featuresAll[i],data);
             delete[] featuresAll[i];
-            //                        drawRect(objects[i], image,2);
         }
         delete[] featuresAll;
         cv::Mat cv_image(image->y, image->x, CV_8UC3, image->data);

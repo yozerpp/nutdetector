@@ -6,30 +6,27 @@
 #define IMG1_COMMON_H
 #include <cmath>
 #include <random>
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/condition_variable.hpp>
+#include <boost/thread.hpp>
 #include "Image.h"
 #include "/usr/local/cuda-12.4/targets/x86_64-linux/include/cuda_runtime_api.h"
 #define RENAME_IMAGE false
 #define COLLUSION {(unsigned char)0,(unsigned char)0,(unsigned char)0}
 #define WHITE {(unsigned char)255,(unsigned char)255,(unsigned char)255}
 #define FEATURES_LENGTH 7
-#define  INLINE inline
+#define INLINE inline
 #define KERNEL_THREADS 32
 #define gc(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+#define thisStream *(streams[boost::this_thread::get_id()])
 inline std::random_device rd;
 inline std::mt19937 gen(rd());
 inline std::uniform_real_distribution<double> dist01(0,1);
 static inline unsigned int numThreads=0;
 inline boost::mutex mtx;
 inline boost::condition_variable cond;
+inline std::map<boost::thread::id, cudaStream_t *> streams;
 namespace Common {
-    struct KernelStruct {
-        int dimension=0;
-        double *data= nullptr;
-    };
-
     struct Color{
+
         unsigned char r=0;
         unsigned char g=0;
         unsigned char b=0;
@@ -65,9 +62,6 @@ namespace Common {
         double finalSum=0.0;
         double weightedSum=0.0;
         double countSum=0.0;
-    //        Mean (): finalSum(0), weightedSum(0), countSum(0) {
-    //            finalSum=0.0;weightedSum=0.0;countSum=0.0;
-    //        }
     };
     static inline unsigned int roundP2(unsigned int x){
         return pow(2, ceil(log2(x)));
@@ -104,33 +98,41 @@ namespace Common {
         }
         return c;
     }
-    static INLINE KernelStruct *createGaussianKernel(int dimension, double sigma) {
-        int kernelSize = pow(dimension, 2);
-        int mean = dimension / 2;
-        double *kernel2d = Common::initializeArray((double) 0.0, kernelSize);
-        double sum = 0.0;
-        for (int i = 0; i < kernelSize; i++) {
-            int y = i / dimension;
-            int x = i % dimension;
-            kernel2d[i] = exp(-0.5 * (pow((y - mean) / sigma, 2.0) +
-                                      pow((x - mean) / sigma, 2.0)))
-                          / (2 * M_PI * sigma * sigma);
-            sum += kernel2d[i];
-            // Accumulate the kernel values
+//    static INLINE KernelStruct *createGaussianKernel(int dimension, double sigma) {
+//        int kernelSize = pow(dimension, 2);
+//        int mean = dimension / 2;
+//        double *kernel2d = Common::initializeArray((double) 0.0, kernelSize);
+//        double sum = 0.0;
+//        for (int i = 0; i < kernelSize; i++) {
+//            int y = i / dimension;
+//            int x = i % dimension;
+//            kernel2d[i] = exp(-0.5 * (pow((y - mean) / sigma, 2.0) +
+//                                      pow((x - mean) / sigma, 2.0)))
+//                          / (2 * M_PI * sigma * sigma);
+//            sum += kernel2d[i];
+//            // Accumulate the kernel values
+//        }
+//        for (int i = 0; i < kernelSize; i++) {
+//            kernel2d[i] /= sum;
+//        }
+//        double sum1 = 0.0;
+//        for (int i = 0; i < kernelSize; i++) {
+//            sum1 += kernel2d[i];
+//        }
+//        auto *ret = new KernelStruct;
+//        ret->dimension = dimension;
+//        ret->data = kernel2d;
+//        return ret;
+//    }
+    static inline double * meanData(Mean * means, const unsigned int len){
+        auto * ret=new double[len];
+        for(int i=0; i<len; i++){
+            ret[i]=means[i].finalSum;
         }
-        for (int i = 0; i < kernelSize; i++) {
-            kernel2d[i] /= sum;
-        }
-        double sum1 = 0.0;
-        for (int i = 0; i < kernelSize; i++) {
-            sum1 += kernel2d[i];
-        }
-        auto *ret = new KernelStruct;
-        ret->dimension = dimension;
-        ret->data = kernel2d;
         return ret;
     }
 }
+
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
     if (code != cudaSuccess)

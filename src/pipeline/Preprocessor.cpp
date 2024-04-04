@@ -1,8 +1,10 @@
 //
 // Created by jonossar on 3/15/24.
 //
+#include <boost/bind/bind.hpp>
 #include "../include/Preprocessor.h"
-
+#define KERNEL_DIM 35
+#define KERNEL_SIGMA 2
 
 #define IMG1_PREPROCESSOR_IMPLEMENTATION
 //
@@ -13,11 +15,7 @@ namespace Preprocessing {
     const unsigned int erode_kernel=3;
     Image * Preprocessor:: grayscale(Image * image){
 
-        auto * out= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::grayScale>(
-                image->data, nullptr,
-                KernelFunctions::grayScale(), image->x,
-                image->y, image->channels,
-                image->x * image->y, 0);
+        auto * out= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char>(image->data, KernelFunctions::grayScale, image->x, image->y, image->channels, image->x*image->y*image->channels);
         printf("turned into grayscale\n");
         delete[] image->data;
         image->data=out;
@@ -25,24 +23,27 @@ namespace Preprocessing {
         return image;
     }
     Image *Preprocessor:: dilate(Image *image, int kernelDim) {
-
-        auto * out= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::dilate>(
-                image->data, nullptr,
-                KernelFunctions::dilate(), image->x,
-                image->y, image->channels,
-                image->x * image->y, kernelDim);
+        auto f = [kernelDim](unsigned char *i, unsigned char *o, unsigned int x, unsigned int y) { return KernelFunctions::dilate(kernelDim, i,o,x,y); };
+        auto* o=KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char>(image->data,
+                                                                                      (void (&&)(unsigned char *,
+                                                                                                 unsigned char *,
+                                                                                                 unsigned int,
+                                                                                                 unsigned int)) std::move(
+                                                                                              f), image->x, image->y, image->channels, image->x * image->y * image->channels);
         printf("dilated\n");
         delete[] image->data;
-        image->data=out;
+        image->data=o;
         if(RENAME_IMAGE) image->fileName.fileBaseName.append("_dilate");
         return image;
     }
     Image * Preprocessor:: erode(Image * image, int kernelDim){
-        auto * out= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::erode>(
-                image->data, nullptr,
-                KernelFunctions::erode(), image->x,
-                image->y, image->channels,
-                image->x * image->y, kernelDim);
+        auto f = [kernelDim](unsigned char *i, unsigned char *o, unsigned int x, unsigned int y) { return KernelFunctions::erode(kernelDim, i,o,x,y); };
+        auto * out= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char>(image->data,
+                                                                                          (void (&&)(unsigned char *,
+                                                                                                     unsigned char *,
+                                                                                                     unsigned int,
+                                                                                                     unsigned int)) std::move(
+                                                                                                  f), image->x, image->y, image->channels, image->x * image->y * image->channels);
         printf("eroded\n");
         delete[] image->data;
         image->data=out;
@@ -60,18 +61,7 @@ namespace Preprocessing {
                 distribution[image->data[i]]++;
         }
         else {
-            this->kernel = Common::createGaussianKernel(15, 3);
-//                cpuDistr(image);
-            distribution= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned int, double, KernelFunctions::distribution>(
-                    image->data,
-                    kernel->data,
-                    KernelFunctions::distribution(),
-                    image->x,
-                    image->y, 1,
-                    pixelRange,
-                    kernel->dimension);
-            delete[] this->kernel->data;
-            delete this->kernel;
+            distribution= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned int>(image->data, KernelFunctions::distribution, image->x, image->y, image->channels, image->x*image->y*image->channels);
         }
         printf("initialized kMean values: ");
         for (int i = 0; i < numMeans; i++) {
@@ -80,6 +70,7 @@ namespace Preprocessing {
         }
         printf("\n");
         calculateMeans();
+        delete[] distribution;
         printf("converged values: ");
         for (int i = 0; i < numMeans; i++)
             printf("%f, ", means[i].finalSum);
@@ -89,28 +80,31 @@ namespace Preprocessing {
                 image->data[i]=isHigherMean(findClosestKmean(image->data[i])) ? (pixelRange - 1) : 0;
             }
         else if (distr == GAUSSIAN) {
-            this->kernel = Common::createGaussianKernel(11, 2);
-             auto *newData= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::gaussianMean>(
-                     image->data,
-                     kernel->data,
-                     KernelFunctions::gaussianMean(means, numMeans),
-                     image->x,
-                     image->y, 1,
-                     image->x *
-                     image->y,
-                     kernel->dimension);
+            auto  f=[=] __global__ (unsigned char* i, unsigned char* o, unsigned int x, unsigned int y){ return KernelFunctions::gaussian(KERNEL_DIM, KERNEL_SIGMA, i, o, x,y);};
+//                auto f=boost::bind(KernelFunctions::gaussian, KERNEL_DIM, KERNEL_SIGMA, boost::arg<2>(), boost::arg<3>(),boost::arg<4>(), boost::arg<5>());
+             auto *newData= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char>(image->data,
+                                                                                                  reinterpret_cast<void (*)(
+                                                                                                          unsigned char *,
+                                                                                                          unsigned char *,
+                                                                                                          unsigned int,
+                                                                                                          unsigned int)>(&f), image->x, image->y, image->channels, image->x * image->y * image->channels);
 //            for (int i=0; i<image->x*image->y; i++){
-//                newData[i] = isHigherMean(findClosestKmean(newData[i])) ? (unsigned char)(pixelRange-1) :(unsigned char)0 ;
+//                newData[i] = isLowerMean(findClosestKmean(newData[i])) ? (unsigned char)(pixelRange-1) :(unsigned char)0 ;
 //            }
+
+            auto g=[=](unsigned char* i, unsigned char* o, unsigned int x, unsigned int y){ return KernelFunctions::cluster(reinterpret_cast<float *>(Common::meanData(means, numMeans)), numMeans,i, o, x, y);};
+//            auto g=boost::bind(KernelFunctions::gaussian, Common::meanData(means, numMeans), numMeans, boost::arg<2>(), boost::arg<3>(),boost::arg<4>(), boost::arg<5>());
+
+            auto *newNewData= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char>(newData,                                                                                                   reinterpret_cast<void (*)(
+                    unsigned char *,
+                    unsigned char *,
+                    unsigned int,
+                    unsigned int)>(&g), image->x, image->y, image->channels, image->x * image->y * image->channels);
+            delete[]newData;
             delete[] image->data;
-            delete[]  this->kernel->data;
-            delete[] distribution;
-            delete this->kernel;
-            image->data = newData;
+            image->data = newNewData;
         }
         if(RENAME_IMAGE) image->fileName.fileBaseName.append(distr == STRAIGHT ? "_straight" : "_gaussian");
-//        image= erode(image,erode_kernel);
-//        image= dilate(image,dilate_kernel);
         printf("finished binary conversion\n");
         delete[]means;
         return image;
@@ -119,5 +113,4 @@ namespace Preprocessing {
         this->pixelRange = pixelRange;
         this->numMeans = numMeans;
     }
-
 }

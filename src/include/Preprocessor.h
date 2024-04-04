@@ -23,25 +23,22 @@ namespace Preprocessing {
         STRAIGHT,
         GAUSSIAN
     };
-    Common::KernelStruct *createGaussianKernel(int dimension, double mean, double sigma);
-
     class Preprocessor{
     private:
         int numMeans;
         int pixelRange;
         unsigned int *distribution;
         Common::Mean *means;
-        Common::KernelStruct *kernel;
     public:
         Preprocessor(int numMeans, int pixelRange);
 
         Image * grayscale(Image * image);
 
-        Image *dilate(Image *image, int kernelDim);
+        static Image *dilate(Image *image, int kernelDim);
 
         Image * erode(Image * image, int kernelDim);
 
-        Image *polarize(Image *image, Distribution distr) ;
+        Image *polarize(Image *image, Distribution distr=GAUSSIAN) ;
     private:
         double averageKmeans() {
             double sum = 0.0;

@@ -88,17 +88,17 @@ __host__ Moment123::Moment123(Common::ObjectLabel *label, Image * image) {
         gc(cudaMemcpy(xNormalD, &yNormal, sizeof(double ), cudaMemcpyHostToDevice));
         gc(cudaMemcpy(yNormalD, &xNormal, sizeof(double ), cudaMemcpyHostToDevice));
         gc(cudaMemcpy(totalD, &totalPixel, sizeof(double ), cudaMemcpyHostToDevice));
-        cudaDeviceSynchronize();
-        weightedSum <<<blocks, threads, sizeof(double)>>>(1, 0, yNormalD, label, image->data, image->x, image->y);
+        cudaStreamSynchronize(thisStream);
+        weightedSum <<<blocks, threads, sizeof(double),thisStream>>>(1, 0, yNormalD, label, image->data, image->x, image->y);
         gc(cudaGetLastError());
 //    bool * oH = (bool*)malloc(sizeof(bool)*label->x_len*label->y_len);
 //    cudaMemcpy(oH, out, sizeof(bool)*label->x_len*label->y_len, cudaMemcpyDeviceToHost);
 //    checkErrors(oH, label->x_len*label->y_len);
-        weightedSum <<<blocks, threads, sizeof(double )>>>(0, 1, xNormalD, label, image->data, image->x, image->y);
+        weightedSum <<<blocks, threads, sizeof(double ),thisStream>>>(0, 1, xNormalD, label, image->data, image->x, image->y);
         gc(cudaGetLastError());
         weightedSum <<<blocks, threads, sizeof(double)>>>(0, 0, totalD, label, image->data, image->x, image->y);
         gc(cudaGetLastError());
-        cudaDeviceSynchronize();
+        cudaStreamSynchronize(thisStream);
         gc(cudaMemcpy(&xNormal, xNormalD, sizeof(double ), cudaMemcpyDeviceToHost));
         gc(cudaMemcpy(&yNormal, yNormalD, sizeof(double), cudaMemcpyDeviceToHost));
         gc(cudaMemcpy(&totalPixel, totalD, sizeof(double ), cudaMemcpyDeviceToHost));
@@ -128,14 +128,14 @@ __host__ Moment123::Moment123(Common::ObjectLabel *label, Image * image) {
                     down=0;
                     cudaMemcpy(upD, &up, sizeof(double ), cudaMemcpyHostToDevice);
                     cudaMemcpy(downD, &down, sizeof(double ), cudaMemcpyHostToDevice);
-                    cudaDeviceSynchronize();
-                    centralMoment <<<blocks, threads, sizeof(double )>>>(i, j, xNormalD, yNormalD, upD, label,
+                    cudaStreamSynchronize(thisStream);
+                    centralMoment <<<blocks, threads, sizeof(double ), thisStream>>>(i, j, xNormalD, yNormalD, upD, label,
                                                                        image->data, image->x, image->y);
                     gc(cudaGetLastError());
-                    centralMoment <<<blocks, threads, sizeof(double )>>>(0, 0, xNormalD, yNormalD, downD, label,
+                    centralMoment <<<blocks, threads, sizeof(double ), thisStream>>>(0, 0, xNormalD, yNormalD, downD, label,
                                                                        image->data, image->x, image->y);
                     gc(cudaGetLastError());
-                    cudaDeviceSynchronize();
+                    cudaStreamSynchronize(thisStream);
                     gc(cudaMemcpy(&up, upD, sizeof(double), cudaMemcpyDeviceToHost));
                     gc(cudaMemcpy(&down, downD, sizeof(double), cudaMemcpyDeviceToHost));
                     double val = up / pow(down, i + j);

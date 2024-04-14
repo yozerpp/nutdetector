@@ -9,5 +9,5 @@
 #include <filesystem>
 #include "Model.h"
 //#include "./Detector.h"
-//#include "./FeatureExtractor.cuh"
+//#include "./Extractor.cuh"
 #endif //IMG_MAIN_H

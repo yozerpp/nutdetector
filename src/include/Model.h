@@ -11,7 +11,7 @@
 #include "Image.h"
 #include "Preprocessor.h"
 #include "Detector.h"
-#include "FeatureExtractor.cuh"
+#include "Extractor.cuh"
 
 #define MODEL_DATA_DIR std::string("./model/")
 #define MODEL_DATA std::string("model.json")

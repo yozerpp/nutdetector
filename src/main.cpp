@@ -19,34 +19,13 @@
           delete image;
      }
  }
-// void train(){
-//     for (const auto &file : std::filesystem::directory_iterator(TRAINING_DIR)){
-//         auto * sample=new Image(file.path().c_str());
-//         printf("\n\n--training on: %s--\n\n", sample->fileName.fileBaseName.c_str());
-//         Model::train(sample, sample->fileName.fileBaseName.substr(0, sample->fileName.fileBaseName.size()).c_str());
-//         sample->fileName.fileBaseName.append("_trained");
-//         sample->save(OUTPUT_DIR);
-//         free(sample->data);
-//         delete sample;
-//     }
-// }
+
  bool contains(std::vector<int> v, int val){
     for(int i=0; i<v.size(); i++)
         if(val==v[i]) return true;
      return false;
 }
  void testt(){
-//    unsigned int len=300;
-//     unsigned int d1 = ceil(((double) len*len) / 512);
-//     unsigned int d2 = ceil(d1 / 1024);
-//     unsigned int d3 = ceil(d2 / 1024);
-//     d1 = d1 > 1024 ? 1024 : d1;
-//     d2 = d2 > 1024 ? 1024 : d2;
-//     for(int i=0;i<len*len; i++){
-//         unsigned int t=i%512;
-//         unsigned int x=(i-t)/512;
-//         printf("i:%d t:%d x:%d\n",i, t, x);
-//     }
      auto * preprocessor=new Preprocessing::Preprocessor(2,256);
     for(auto &file: std::filesystem::directory_iterator(TRAINING_DIR)){
         auto * image=new Image(file.path().c_str());
@@ -56,15 +35,6 @@
         delete image;
     }
     delete preprocessor;
-////    auto * preprocessor=new Preprocessing::Preprocessor(2,256);
-////     for (const auto &file : std::filesystem::directory_iterator(INPUT_DIR)) {
-////     preprocessor->polarize(new Image(file.path().c_str()), Preprocessing::GAUSSIAN)->save(OUTPUT_DIR);
-////     }
-//YAML::Node a;
-//nlohmann::json a;
-//for(std::string str: {"a","b","c"})
-//    for(int i=0; i<5; i+=16)
-//    a[str].push_back(i);
  }
  namespace opts=boost::program_options;
 int main(int argc, const char * argv[]){
@@ -92,7 +62,27 @@ int main(int argc, const char * argv[]){
 //        auto * labelLength=new unsigned int;
 //        ObjectLabel* labels=Detector::Detect(img, labelLength);
 //        for(int i=0; i<*labelLength; i++)
-//            FeatureExtractor::extractFeatures(labels[i], img);
+//            Extractor::extractFeatures(labels[i], img);
 //        img->save(OUTPUT_DIR);
 //    }
+// void train(){
+//     for (const auto &file : std::filesystem::directory_iterator(TRAINING_DIR)){
+//         auto * sample=new Image(file.path().c_str());
+//         printf("\n\n--training on: %s--\n\n", sample->fileName.fileBaseName.c_str());
+//         Model::train(sample, sample->fileName.fileBaseName.substr(0, sample->fileName.fileBaseName.size()).c_str());
+//         sample->fileName.fileBaseName.append("_trained");
+//         sample->save(OUTPUT_DIR);
+//         free(sample->data);
+//         delete sample;
+//     }
+// }
+////    auto * preprocessor=new Preprocessing::Preprocessor(2,256);
+////     for (const auto &file : std::filesystem::directory_iterator(INPUT_DIR)) {
+////     preprocessor->polarize(new Image(file.path().c_str()), Preprocessing::GAUSSIAN)->save(OUTPUT_DIR);
+////     }
+//YAML::Node a;
+//nlohmann::json a;
+//for(std::string str: {"a","b","c"})
+//    for(int i=0; i<5; i+=16)
+//    a[str].push_back(i);
 }

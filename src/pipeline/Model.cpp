@@ -18,7 +18,7 @@ namespace Model{
         Common::ObjectLabel * objects= detector->detect( &numObjects);
         auto * featuresSum=Common::initializeArray((long double) 0, FEATURES_LENGTH);
 //        cv::Mat cv_image(sample->y, sample->x, CV_8UC3, sample->data);
-        long double ** featuresAll= FeatureExtractor::extractFeatures(objects, sample, numObjects);
+        long double ** featuresAll= Extractor::extractFeatures(objects, sample, numObjects);
         for(unsigned int i=0; i<numObjects; i++) {
             for (int j = 0; j < FEATURES_LENGTH; j++) {
                 featuresSum[j] += featuresAll[i][j];
@@ -182,7 +182,7 @@ namespace Model{
         auto* detector=new Detector(image);
         Common::ObjectLabel * objects= detector->detect( &numObjects);
         printf("--Started extracting--\n");
-        long double ** featuresAll= FeatureExtractor::extractFeatures(objects, image, numObjects);
+        long double ** featuresAll= Extractor::extractFeatures(objects, image, numObjects);
         auto * labels=new std::string[numObjects];
         for(unsigned int i=0; i<numObjects; i++){
             normalize(featuresAll[i], data);

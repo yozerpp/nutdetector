@@ -11,7 +11,7 @@
 #include "common.h"
 #endif
 #ifndef IMG1_KERNELFUNCTIONS_CUH
-#include "KernelFunctions.cuh"
+#include "Kernel.cuh"
 #endif
 #ifndef IMG1_IMAGE_H
 #include "Image.h"

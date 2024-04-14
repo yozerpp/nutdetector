@@ -13,9 +13,9 @@ namespace Preprocessing {
     const unsigned int erode_kernel=3;
     Image * Preprocessor:: grayscale(Image * image){
 
-        auto * out= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::grayScale>(
+        auto * out= Kernel::kernelFunctionsWrapper<unsigned char, unsigned char, double, Kernel::grayScale>(
                 image->data, nullptr,
-                KernelFunctions::grayScale(), image->x,
+                Kernel::grayScale(), image->x,
                 image->y, image->channels,
                 image->x * image->y, 0);
         printf("turned into grayscale\n");
@@ -26,9 +26,9 @@ namespace Preprocessing {
     }
     Image *Preprocessor:: dilate(Image *image, int kernelDim) {
 
-        auto * out= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::dilate>(
+        auto * out= Kernel::kernelFunctionsWrapper<unsigned char, unsigned char, double, Kernel::dilate>(
                 image->data, nullptr,
-                KernelFunctions::dilate(), image->x,
+                Kernel::dilate(), image->x,
                 image->y, image->channels,
                 image->x * image->y, kernelDim);
         printf("dilated\n");
@@ -38,9 +38,9 @@ namespace Preprocessing {
         return image;
     }
     Image * Preprocessor:: erode(Image * image, int kernelDim){
-        auto * out= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::erode>(
+        auto * out= Kernel::kernelFunctionsWrapper<unsigned char, unsigned char, double, Kernel::erode>(
                 image->data, nullptr,
-                KernelFunctions::erode(), image->x,
+                Kernel::erode(), image->x,
                 image->y, image->channels,
                 image->x * image->y, kernelDim);
         printf("eroded\n");
@@ -62,10 +62,10 @@ namespace Preprocessing {
         else {
             this->kernel = Common::createGaussianKernel(15, 3);
 //                cpuDistr(image);
-            distribution= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned int, double, KernelFunctions::distribution>(
+            distribution= Kernel::kernelFunctionsWrapper<unsigned char, unsigned int, double, Kernel::distribution>(
                     image->data,
                     kernel->data,
-                    KernelFunctions::distribution(),
+                    Kernel::distribution(),
                     image->x,
                     image->y, 1,
                     pixelRange,
@@ -90,10 +90,10 @@ namespace Preprocessing {
             }
         else if (distr == GAUSSIAN) {
             this->kernel = Common::createGaussianKernel(11, 2);
-             auto *newData= KernelFunctions::kernelFunctionsWrapper<unsigned char, unsigned char, double, KernelFunctions::gaussianMean>(
+             auto *newData= Kernel::kernelFunctionsWrapper<unsigned char, unsigned char, double, Kernel::gaussianMean>(
                      image->data,
                      kernel->data,
-                     KernelFunctions::gaussianMean(means, numMeans),
+                     Kernel::gaussianMean(means, numMeans),
                      image->x,
                      image->y, 1,
                      image->x *

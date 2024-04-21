@@ -6,9 +6,10 @@
 #define IMG1_MODEL_H
 
 #include "json.hpp"
+#include "common.h"
 #include <fstream>
 #include "opencv2/opencv.hpp"
-#include "Image.h"
+#include "Image.cuh"
 #include "Preprocessor.h"
 #include "Detector.h"
 #include "FeatureExtractor.cuh"
@@ -20,7 +21,7 @@
 #define TRAINING_DIR (char *) "./training/"
 #define TESTING_DIR (char *) "./test/"
 namespace Model {
-//void train(Image * data, const char * label);
+//void train(Tensor * data, const char * label);
     void train(const char* trainDir);
     Image * infer(Image * data);
     enum NormalizationMethod{

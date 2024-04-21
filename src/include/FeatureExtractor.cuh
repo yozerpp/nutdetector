@@ -7,6 +7,9 @@
 #ifndef IMG1_COMMON_H
 #include "common.h"
 #endif
+#ifndef IMG1_IMAGE_CUH
+#include "Image.cuh"
+#endif
 #define MOMENT_MAX 3
 namespace FeatureExtractor{
     class Moment123{

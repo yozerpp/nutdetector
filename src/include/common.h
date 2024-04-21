@@ -7,9 +7,9 @@
 #include <cmath>
 #include <random>
 #include <boost/thread.hpp>
-#include "Image.h"
+#include "device_launch_parameters.h"
 #include "/usr/local/cuda-12.4/targets/x86_64-linux/include/cuda_runtime_api.h"
-#define RENAME_IMAGE false
+#define SHOW_STEPS false
 #define COLLUSION {(unsigned char)0,(unsigned char)0,(unsigned char)0}
 #define WHITE {(unsigned char)255,(unsigned char)255,(unsigned char)255}
 #define FEATURES_LENGTH 7
@@ -17,6 +17,8 @@
 #define KERNEL_THREADS 32
 #define gc(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 #define thisStream *(streams[boost::this_thread::get_id()])
+#define uc unsigned char
+#define ui unsigned int
 inline std::random_device rd;
 inline std::mt19937 gen(rd());
 inline std::uniform_real_distribution<double> dist01(0,1);
@@ -83,6 +85,26 @@ namespace Common {
         }
         return ret;
     }
+    template<typename T>
+    static INLINE __host__ T* gaussianKernel(unsigned int dim, unsigned int sigma, int center=-1, unsigned int dimension=1){
+        center=center>=0?center:(dim/2);
+        T* out=new T[dim];
+        T sum=(T)0;
+        for(int i=0; i<dim; i++){
+            out[i]=1/(sigma * sqrt(2*M_PI)) * exp(-0.5 *pow((i-center)*1.0 / sigma,2));
+            sum+=out[i];
+        }
+        for(int i=0; i<dim; i++) out[i]/=sum;
+        if(dimension==2){
+            T* tmp = new T[dim*dim];
+            for(int i=0; i<dim; i++)
+                for(int j=0; j<dim; j++)
+                    tmp[i*dim + j]=out[i]*out[j];
+            delete[] out;
+            out=tmp;
+        }
+        return out;
+    }
     static INLINE bool isNotWhite(unsigned char * in){
         return *in!=(unsigned char)255|| *(in+1)!=(unsigned char)255 || *(in+2)!=(unsigned char)255;
     }
@@ -124,8 +146,8 @@ namespace Common {
 //        ret->data = kernel2d;
 //        return ret;
 //    }
-    static inline double * meanData(Mean * means, const unsigned int len){
-        auto * ret=new double[len];
+    static inline float * meanData(Mean * means, const unsigned int len){
+        auto * ret=new float[len];
         for(int i=0; i<len; i++){
             ret[i]=means[i].finalSum;
         }
@@ -138,7 +160,8 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
     if (code != cudaSuccess)
     {
         fprintf(stderr,"%s::%s::%d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
+        if (abort)
+            exit(code);
     }
 }
 #endif //IMG1_COMMON_H

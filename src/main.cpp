@@ -21,7 +21,7 @@
  }
 // void train(){
 //     for (const auto &file : std::filesystem::directory_iterator(TRAINING_DIR)){
-//         auto * sample=new Image(file.path().c_str());
+//         auto * sample=new Tensor(file.path().c_str());
 //         printf("\n\n--training on: %s--\n\n", sample->fileName.fileBaseName.c_str());
 //         Model::train(sample, sample->fileName.fileBaseName.substr(0, sample->fileName.fileBaseName.size()).c_str());
 //         sample->fileName.fileBaseName.append("_trained");
@@ -49,16 +49,15 @@
 //     }
      auto * preprocessor=new Preprocessing::Preprocessor(2,256);
     for(auto &file: std::filesystem::directory_iterator(TRAINING_DIR)){
-        auto * image=new Image(file.path().c_str());
+        Image image(file.path().c_str());
         preprocessor->polarize(image, Preprocessing::GAUSSIAN);
 //        image->save(OUTPUT_DIR);
-        delete[] image->data;
-        delete image;
+        delete[] image.data;
     }
     delete preprocessor;
 ////    auto * preprocessor=new Preprocessing::Preprocessor(2,256);
 ////     for (const auto &file : std::filesystem::directory_iterator(INPUT_DIR)) {
-////     preprocessor->polarize(new Image(file.path().c_str()), Preprocessing::GAUSSIAN)->save(OUTPUT_DIR);
+////     preprocessor->polarize(new Tensor(file.path().c_str()), Preprocessing::GAUSSIAN)->save(OUTPUT_DIR);
 ////     }
 //YAML::Node a;
 //nlohmann::json a;
@@ -90,7 +89,7 @@ int main(int argc, const char * argv[]){
 //    return a;
 //    auto * preProcessor=new Preprocessing::Preprocessor(2, 256);
 //    for (const auto &file : std::filesystem::directory_iterator(INPUT_DIR)) {
-//        auto * img=new Image(file.path().c_str());
+//        auto * img=new Tensor(file.path().c_str());
 //        img=preProcessor->polarize(img, Preprocessing::GAUSSIAN);
 //        img->save(OUTPUT_DIR);
 //        auto * labelLength=new unsigned int;

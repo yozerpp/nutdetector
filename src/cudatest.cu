@@ -2,7 +2,7 @@
 // Created by jonossar on 3/8/24.
 //
 #include "stdio.h"
-#include "include/Image.h"
+#include "include/Image.cuh"
 #include "include/Preprocessor.h"
 void __global__ kernelFunc(unsigned int x,unsigned int y,unsigned int x2, bool * out){
     unsigned int flatIdx=(threadIdx.y + blockDim.y*blockIdx.y)*x + (threadIdx.x + blockIdx.x*blockDim.x)*1;

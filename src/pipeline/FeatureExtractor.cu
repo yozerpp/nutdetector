@@ -17,7 +17,7 @@ namespace FeatureExtractor{
         }
     }
     __global__ void weightedSum(const unsigned int p,const unsigned int q, double *out, const Common::ObjectLabel * label,unsigned char *data,const unsigned int x, const unsigned int y) {
-        __shared__ double blockSum;
+//        __shared__ double blockSum;
         unsigned int idx_y=blockIdx.y*blockDim.y+ threadIdx.y;
         unsigned int idx_x=blockIdx.x*blockDim.x + threadIdx.x;
         unsigned int realIdx = (label->y_start +idx_y ) * x + label->x_start + idx_x;
@@ -34,7 +34,7 @@ namespace FeatureExtractor{
         }
 //       __syncthreads();
 //        if(idx_x==0 && idx_y==0) {
-//            atomicAdd(out, blockSum);
+//            atomicAddChar(out, blockSum);
 //        }
     }
     __global__ void centralMoment(const unsigned int p,const unsigned int q,const double * xNormal,const double * yNormal, double *out,const Common::ObjectLabel * label,unsigned char *data,const unsigned int x, const unsigned int y) {
@@ -54,7 +54,7 @@ namespace FeatureExtractor{
         }
 //        __syncthreads();
 //        if(idx_x==0 && idx_y==0) {
-//            atomicAdd(out, blockSum);
+//            atomicAddChar(out, blockSum);
 //        }
     }
 __host__ Moment123::Moment123(Common::ObjectLabel *label, Image * image) {
@@ -169,8 +169,8 @@ __host__ Moment123::Moment123(Common::ObjectLabel *label, Image * image) {
         auto ** out= new long double *[labelLength];
         unsigned char * gpuData;
         unsigned char * tmp=image->data;
-        gc(cudaMalloc(&gpuData, sizeof(unsigned char)*image->x*image->y*image->channels));
-        gc(cudaMemcpy(gpuData, image->data, sizeof(unsigned char)*image->x*image->y*image->channels, cudaMemcpyHostToDevice));
+        gc(cudaMalloc(&gpuData, sizeof(unsigned char)*image->x*image->y*image->z));
+        gc(cudaMemcpy(gpuData, image->data, sizeof(unsigned char)*image->x*image->y*image->z, cudaMemcpyHostToDevice));
         image->data=gpuData;
         for(unsigned int i=0; i<labelLength; i++) {
             out[i] = extractOne(&objects[i], image);

@@ -8,6 +8,9 @@
 #ifndef IMG1_COMMON_H
 #include "common.h"
 #endif
+#ifndef IMG1_IMAGE_CUH
+#include "Image.cuh"
+#endif
 #include <boost/thread.hpp>
 class Detector {
 public:

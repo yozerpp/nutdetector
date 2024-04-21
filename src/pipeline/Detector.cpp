@@ -78,8 +78,8 @@
         printf("filtered object count: %d\n", *labelLength);
         delete[] image->data;
         image->data=out;
-        image->channels=3;
-        if(RENAME_IMAGE) image->fileName.fileBaseName.append("_detect");
+        image->z=3;
+        if(SHOW_STEPS) image->fileName.fileBaseName.append("_detect");
         auto * ret= (Common::ObjectLabel*) malloc(*labelLength * sizeof(Common::ObjectLabel));
         memcpy(ret, filteredLabels.data(), *labelLength* sizeof(Common::ObjectLabel));
         labels.clear();
@@ -129,7 +129,7 @@
 //        }
 //        return closest;
 //    }
-//    static Common::ObjectLabel * Detect(Image * image, unsigned int* labelLength){
+//    static Common::ObjectLabel * Detect(Tensor * image, unsigned int* labelLength){
 //        printf("--Started detecting--\n");
 //        std::vector<Common::ObjectLabel> labels{};
 //        const unsigned  char * in=image->data;
@@ -172,8 +172,8 @@
 //        printf("filtered object count: %d\n", *labelLength);
 //        free(image->data);
 //        image->data=out;
-//        image->channels=3;
-//        if(RENAME_IMAGE) image->fileName.fileBaseName.append("_detect");
+//        image->z=3;
+//        if(SHOW_STEPS) image->fileName.fileBaseName.append("_detect");
 //        auto * ret= (Common::ObjectLabel*) malloc(*labelLength * sizeof(Common::ObjectLabel));
 //        memcpy(ret, filteredLabels.data(), *labelLength* sizeof(Common::ObjectLabel));
 //        labels.clear();

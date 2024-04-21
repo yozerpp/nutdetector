@@ -1,4 +1,4 @@
-/* stb_image - v2.29 - public domain Image loader - http://nothings.org/stb
+/* stb_image - v2.29 - public domain Tensor loader - http://nothings.org/stb
                                   no warranty implied; use at your own risk
 
    Do this:
@@ -25,7 +25,7 @@
 
       TGA (not sure what subset, if a subset)
       BMP non-1bpp, non-RLE
-      PSD (composited view only, no extra channels, 8/16 bit-per-channel)
+      PSD (composited view only, no extra z, 8/16 bit-per-channel)
 
       GIF (*comp always reports as 4-channel)
       HDR (radiance rgbE format)
@@ -78,7 +78,7 @@ RECENT REVISION HISTORY:
 
  ============================    Contributors    =========================
 
- Image formats                          Extensions, features
+ Tensor formats                          Extensions, features
     Sean Barrett (jpeg, png, bmp)          Jetro Lauha (stbi_info)
     Nicolas Schulz (hdr, psd)              Martin "SpartanJ" Golini (stbi_info)
     Jonathan Dummer (tga)                  James "moose2000" Brown (iPhone PNG)
@@ -145,25 +145,25 @@ RECENT REVISION HISTORY:
 //    stbi_image_free(data);
 //
 // Standard parameters:
-//    int *x                 -- outputs Image width in pixels
-//    int *y                 -- outputs Image height in pixels
-//    int *channels_in_file  -- outputs # of Image components in Image file
-//    int desired_channels   -- if non-zero, # of Image components requested in result
+//    int *x                 -- outputs Tensor width in pixels
+//    int *y                 -- outputs Tensor height in pixels
+//    int *channels_in_file  -- outputs # of Tensor components in Tensor file
+//    int desired_channels   -- if non-zero, # of Tensor components requested in result
 //
-// The return value from an Image loader is an 'unsigned char *' which points
-// to the pixel data, or NULL on an allocation failure or if the Image is
+// The return value from an Tensor loader is an 'unsigned char *' which points
+// to the pixel data, or NULL on an allocation failure or if the Tensor is
 // corrupt or invalid. The pixel data consists of *y scanlines of *x pixels,
 // with each pixel consisting of N interleaved 8-bit components; the first
-// pixel pointed to is top-left-most in the Image. There is no padding between
-// Image scanlines or between pixels, regardless of format. The number of
+// pixel pointed to is top-left-most in the Tensor. There is no padding between
+// Tensor scanlines or between pixels, regardless of format. The number of
 // components N is 'desired_channels' if desired_channels is non-zero, or
 // *channels_in_file otherwise. If desired_channels is non-zero,
 // *channels_in_file has the number of components that _would_ have been
 // output otherwise. E.g. if you set desired_channels to 4, you will always
-// get RGBA output, but you can check *channels_in_file to see if it's trivially
-// opaque because e.g. there were only 3 channels in the source Image.
+// toHost RGBA output, but you can check *channels_in_file to see if it's trivially
+// opaque because e.g. there were only 3 z in the source Tensor.
 //
-// An output Image with N components has the following components interleaved
+// An output Tensor with N components has the following components interleaved
 // in this order in each pixel:
 //
 //     N=#comp     components
@@ -172,38 +172,38 @@ RECENT REVISION HISTORY:
 //       3           red, green, blue
 //       4           red, green, blue, alpha
 //
-// If Image loading fails for any reason, the return value will be NULL,
+// If Tensor loading fails for any reason, the return value will be NULL,
 // and *x, *y, *channels_in_file will be unchanged. The function
 // stbi_failure_reason() can be queried for an extremely brief, end-user
 // unfriendly explanation of why the load failed. Define STBI_NO_FAILURE_STRINGS
-// to avoid compiling these strings at all, and STBI_FAILURE_USERMSG to get slightly
+// to avoid compiling these strings at all, and STBI_FAILURE_USERMSG to toHost slightly
 // more user-friendly ones.
 //
 // Paletted PNG, BMP, GIF, and PIC images are automatically depalettized.
 //
-// To query the width, height and component count of an Image without having to
+// To query the width, height and component count of an Tensor without having to
 // decode the full file, you can use the stbi_info family of functions:
 //
 //   int x,y,n,ok;
 //   ok = stbi_info(filename, &x, &y, &n);
-//   // returns ok=1 and sets x, y, n if Image is a supported format,
+//   // returns ok=1 and sets x, y, n if Tensor is a supported format,
 //   // 0 otherwise.
 //
 // Note that stb_image pervasively uses ints in its public API for sizes,
 // including sizes of memory buffers. This is now part of the API and thus
-// hard to change without causing breakage. As a result, the various Image
-// loaders all have certain limits on Image size; these differ somewhat
+// hard to change without causing breakage. As a result, the various Tensor
+// loaders all have certain limits on Tensor size; these differ somewhat
 // by format but generally boil down to either just under 2GB or just under
-// 1GB. When the decoded Image would be larger than this, stb_image decoding
+// 1GB. When the decoded Tensor would be larger than this, stb_image decoding
 // will fail.
 //
-// Additionally, stb_image will reject Image files that have any of their
+// Additionally, stb_image will reject Tensor files that have any of their
 // dimensions set to a larger value than the configurable STBI_MAX_DIMENSIONS,
 // which defaults to 2**24 = 16777216 pixels. Due to the above memory limit,
-// the only way to have an Image with such dimensions load correctly
+// the only way to have an Tensor with such dimensions load correctly
 // is for it to have a rather extreme aspect ratio. Either way, the
 // assumption here is that such larger images are likely to be malformed
-// or malicious. If you do need to load an Image with individual dimensions
+// or malicious. If you do need to load an Tensor with individual dimensions
 // larger than that, and it still fits in the overall size limit, you can
 // #define STBI_MAX_DIMENSIONS on your own to be something larger.
 //
@@ -267,7 +267,7 @@ RECENT REVISION HISTORY:
 // test; if not, the generic C versions are used as a fall-back. On ARM targets,
 // the typical path is to have separate builds for NEON and non-NEON devices
 // (at least this is true for iOS and Android). Therefore, the NEON support is
-// toggled by a build flag: define STBI_NEON to get NEON loops.
+// toggled by a build flag: define STBI_NEON to toHost NEON loops.
 //
 // If for some reason you do not want to use any of SIMD code, or if
 // you have issues compiling it, you can disable it entirely by
@@ -275,7 +275,7 @@ RECENT REVISION HISTORY:
 //
 // ===========================================================================
 //
-// HDR Image support   (disable by defining STBI_NO_HDR)
+// HDR Tensor support   (disable by defining STBI_NO_HDR)
 //
 // stb_image supports loading HDR images in general, and currently the Radiance
 // .HDR file format specifically. You can still load any file through the existing
@@ -302,8 +302,8 @@ RECENT REVISION HISTORY:
 //     stbi_ldr_to_hdr_gamma(2.2f);
 //
 // Finally, given a filename (or an open file or memory block--see header
-// file for details) containing Image data, you can query for the "most
-// appropriate" interface to use (that is, whether the Image is HDR or
+// file for details) containing Tensor data, you can query for the "most
+// appropriate" interface to use (that is, whether the Tensor is HDR or
 // not), using:
 //
 //     stbi_is_hdr(char *filename);
@@ -318,7 +318,7 @@ RECENT REVISION HISTORY:
 // stbi_convert_iphone_png_to_rgb(1).
 //
 // Call stbi_set_unpremultiply_on_load(1) as well to force a divide per
-// pixel to remove any premultiplied alpha *only* if the Image file explicitly
+// pixel to remove any premultiplied alpha *only* if the Tensor file explicitly
 // says there's premultiplied data (currently only happens in iPhone images,
 // and only if iPhone convert-to-rgb processing is on).
 //
@@ -361,7 +361,7 @@ RECENT REVISION HISTORY:
 //    than that size (in either width or height) without further processing.
 //    This is to let programs in the wild set an upper bound to prevent
 //    denial-of-service attacks on untrusted data, as one could generate a
-//    valid Image of gigantic dimensions and force stb_image to allocate a
+//    valid Tensor of gigantic dimensions and force stb_image to allocate a
 //    huge block of memory and spend disproportionate time decoding it. By
 //    default this is set to (1 << 24), which is 16777216, but that's still
 //    very big.
@@ -404,7 +404,7 @@ extern "C" {
 //
 
 //
-// load Image by filename, open file, or memory buffer
+// load Tensor by filename, open file, or memory buffer
 //
 
 typedef struct
@@ -425,7 +425,7 @@ STBIDEF stbi_uc *stbi_load_from_callbacks(stbi_io_callbacks const *clbk  , void 
 #ifndef STBI_NO_STDIO
 STBIDEF stbi_uc *stbi_load            (char const *filename, int *x, int *y, int *channels_in_file, int desired_channels);
 STBIDEF stbi_uc *stbi_load_from_file  (FILE *f, int *x, int *y, int *channels_in_file, int desired_channels);
-// for stbi_load_from_file, file pointer is left pointing immediately after Image
+// for stbi_load_from_file, file pointer is left pointing immediately after Tensor
 #endif
 
 #ifndef STBI_NO_GIF
@@ -482,14 +482,14 @@ STBIDEF int      stbi_is_hdr_from_file(FILE *f);
 #endif // STBI_NO_STDIO
 
 
-// get a VERY brief reason for failure
+// toHost a VERY brief reason for failure
 // on most compilers (and ALL modern mainstream compilers) this is threadsafe
 STBIDEF const char *stbi_failure_reason  (void);
 
-// free the loaded Image -- this is just free()
+// free the loaded Tensor -- this is just free()
 STBIDEF void     stbi_image_free      (void *retval_from_stbi_load);
 
-// get Image dimensions & components without fully decoding
+// toHost Tensor dimensions & components without fully decoding
 STBIDEF int      stbi_info_from_memory(stbi_uc const *buffer, int len, int *x, int *y, int *comp);
 STBIDEF int      stbi_info_from_callbacks(stbi_io_callbacks const *clbk, void *user, int *x, int *y, int *comp);
 STBIDEF int      stbi_is_16_bit_from_memory(stbi_uc const *buffer, int len);
@@ -504,7 +504,7 @@ STBIDEF int      stbi_is_16_bit_from_file(FILE *f);
 
 
 
-// for Image formats that explicitly notate that they have premultiplied alpha,
+// for Tensor formats that explicitly notate that they have premultiplied alpha,
 // we just return the colors as stored in the file. set this flag to force
 // unpremultiplication. results are undefined if the unpremultiply overflow.
 STBIDEF void stbi_set_unpremultiply_on_load(int flag_true_if_should_unpremultiply);
@@ -513,7 +513,7 @@ STBIDEF void stbi_set_unpremultiply_on_load(int flag_true_if_should_unpremultipl
 // or just pass them through "as-is"
 STBIDEF void stbi_convert_iphone_png_to_rgb(int flag_true_if_should_convert);
 
-// flip the Image vertically, so the first pixel in the output array is the bottom left
+// flip the Tensor vertically, so the first pixel in the output array is the bottom left
 STBIDEF void stbi_set_flip_vertically_on_load(int flag_true_if_should_flip);
 
 // as above, but only applies to images loaded on the thread that calls the function
@@ -800,7 +800,7 @@ static int stbi__sse2_available(void)
 //  stbi__context struct and start_xxx functions
 
 // stbi__context structure is our basic context used by all images, so it
-// contains all the IO context, plus some basic Image information
+// contains all the IO context, plus some basic Tensor information
 typedef struct
 {
    stbi__uint32 img_x, img_y;
@@ -987,7 +987,7 @@ static void *stbi__malloc(size_t size)
 }
 
 // stb_image uses ints pervasively, including for offset calculations.
-// therefore the largest decoded Image size we can support with the
+// therefore the largest decoded Tensor size we can support with the
 // current code, even on 64-bit targets, is INT_MAX. this is not a
 // significant limitation for the intended use case.
 //
@@ -1183,13 +1183,13 @@ static void *stbi__load_main(stbi__context *s, int *x, int *y, int *comp, int re
       return stbi__tga_load(s,x,y,comp,req_comp, ri);
    #endif
 
-   return stbi__errpuc("unknown Image type", "Image not of any known type, or corrupt");
+   return stbi__errpuc("unknown Tensor type", "Tensor not of any known type, or corrupt");
 }
 
-static stbi_uc *stbi__convert_16_to_8(stbi__uint16 *orig, int w, int h, int channels)
+static stbi_uc *stbi__convert_16_to_8(stbi__uint16 *orig, int w, int h, int z)
 {
    int i;
-   int img_len = w * h * channels;
+   int img_len = w * h * z;
    stbi_uc *reduced;
 
    reduced = (stbi_uc *) stbi__malloc(img_len);
@@ -1202,10 +1202,10 @@ static stbi_uc *stbi__convert_16_to_8(stbi__uint16 *orig, int w, int h, int chan
    return reduced;
 }
 
-static stbi__uint16 *stbi__convert_8_to_16(stbi_uc *orig, int w, int h, int channels)
+static stbi__uint16 *stbi__convert_8_to_16(stbi_uc *orig, int w, int h, int z)
 {
    int i;
-   int img_len = w * h * channels;
+   int img_len = w * h * z;
    stbi__uint16 *enlarged;
 
    enlarged = (stbi__uint16 *) stbi__malloc(img_len*2);
@@ -1218,12 +1218,12 @@ static stbi__uint16 *stbi__convert_8_to_16(stbi_uc *orig, int w, int h, int chan
    return enlarged;
 }
 
-static void stbi__vertical_flip(void *Image, int w, int h, int bytes_per_pixel)
+static void stbi__vertical_flip(void *Tensor, int w, int h, int bytes_per_pixel)
 {
    int row;
    size_t bytes_per_row = (size_t)w * bytes_per_pixel;
    stbi_uc temp[2048];
-   stbi_uc *bytes = (stbi_uc *)Image;
+   stbi_uc *bytes = (stbi_uc *)Tensor;
 
    for (row = 0; row < (h>>1); row++) {
       stbi_uc *row0 = bytes + row*bytes_per_row;
@@ -1243,12 +1243,12 @@ static void stbi__vertical_flip(void *Image, int w, int h, int bytes_per_pixel)
 }
 
 #ifndef STBI_NO_GIF
-static void stbi__vertical_flip_slices(void *Image, int w, int h, int z, int bytes_per_pixel)
+static void stbi__vertical_flip_slices(void *Tensor, int w, int h, int z, int bytes_per_pixel)
 {
    int slice;
    int slice_size = w * h * bytes_per_pixel;
 
-   stbi_uc *bytes = (stbi_uc *)Image;
+   stbi_uc *bytes = (stbi_uc *)Tensor;
    for (slice = 0; slice < z; ++slice) {
       stbi__vertical_flip(bytes, w, h, bytes_per_pixel);
       bytes += slice_size;
@@ -1275,8 +1275,8 @@ static unsigned char *stbi__load_and_postprocess_8bit(stbi__context *s, int *x, 
    // @TODO: move stbi__convert_format to here
 
    if (stbi__vertically_flip_on_load) {
-      int channels = req_comp ? req_comp : *comp;
-      stbi__vertical_flip(result, *x, *y, channels * sizeof(stbi_uc));
+      int z = req_comp ? req_comp : *comp;
+      stbi__vertical_flip(result, *x, *y, z * sizeof(stbi_uc));
    }
 
    return (unsigned char *) result;
@@ -1302,8 +1302,8 @@ static stbi__uint16 *stbi__load_and_postprocess_16bit(stbi__context *s, int *x, 
    // @TODO: special case RGB-to-Y (and RGBA-to-YA) for 8-bit-to-16-bit case to keep more precision
 
    if (stbi__vertically_flip_on_load) {
-      int channels = req_comp ? req_comp : *comp;
-      stbi__vertical_flip(result, *x, *y, channels * sizeof(stbi__uint16));
+      int z = req_comp ? req_comp : *comp;
+      stbi__vertical_flip(result, *x, *y, z * sizeof(stbi__uint16));
    }
 
    return (stbi__uint16 *) result;
@@ -1313,8 +1313,8 @@ static stbi__uint16 *stbi__load_and_postprocess_16bit(stbi__context *s, int *x, 
 static void stbi__float_postprocess(float *result, int *x, int *y, int *comp, int req_comp)
 {
    if (stbi__vertically_flip_on_load && result != NULL) {
-      int channels = req_comp ? req_comp : *comp;
-      stbi__vertical_flip(result, *x, *y, channels * sizeof(float));
+      int z = req_comp ? req_comp : *comp;
+      stbi__vertical_flip(result, *x, *y, z * sizeof(float));
    }
 }
 #endif
@@ -1333,7 +1333,7 @@ STBIDEF int stbi_convert_wchar_to_utf8(char *buffer, size_t bufferlen, const wch
 }
 #endif
 
-static FILE *stbi__fopen(char const *filename, char const *mode)
+static FILE *stbi__fopen(char const *filename, char const *Mode)
 {
    FILE *f;
 #if defined(_WIN32) && defined(STBI_WINDOWS_UTF8)
@@ -1342,7 +1342,7 @@ static FILE *stbi__fopen(char const *filename, char const *mode)
 	if (0 == MultiByteToWideChar(65001 /* UTF8 */, 0, filename, -1, wFilename, sizeof(wFilename)/sizeof(*wFilename)))
       return 0;
 
-	if (0 == MultiByteToWideChar(65001 /* UTF8 */, 0, mode, -1, wMode, sizeof(wMode)/sizeof(*wMode)))
+	if (0 == MultiByteToWideChar(65001 /* UTF8 */, 0, Mode, -1, wMode, sizeof(wMode)/sizeof(*wMode)))
       return 0;
 
 #if defined(_MSC_VER) && _MSC_VER >= 1400
@@ -1353,10 +1353,10 @@ static FILE *stbi__fopen(char const *filename, char const *mode)
 #endif
 
 #elif defined(_MSC_VER) && _MSC_VER >= 1400
-   if (0 != fopen_s(&f, filename, mode))
+   if (0 != fopen_s(&f, filename, Mode))
       f=0;
 #else
-   f = fopen(filename, mode);
+   f = fopen(filename, Mode);
 #endif
    return f;
 }
@@ -1471,7 +1471,7 @@ static float *stbi__loadf_main(stbi__context *s, int *x, int *y, int *comp, int 
    data = stbi__load_and_postprocess_8bit(s, x, y, comp, req_comp);
    if (data)
       return stbi__ldr_to_hdr(data, *x, *y, req_comp ? req_comp : *comp);
-   return stbi__errpf("unknown Image type", "Image not of any known type, or corrupt");
+   return stbi__errpf("unknown Tensor type", "Tensor not of any known type, or corrupt");
 }
 
 STBIDEF float *stbi_loadf_from_memory(stbi_uc const *buffer, int len, int *x, int *y, int *comp, int req_comp)
@@ -1583,7 +1583,7 @@ STBIDEF void   stbi_hdr_to_ldr_scale(float scale) { stbi__h2l_scale_i = 1/scale;
 
 //////////////////////////////////////////////////////////////////////////////
 //
-// Common code used by all Image loaders
+// Common code used by all Tensor loaders
 //
 
 enum
@@ -1740,7 +1740,7 @@ static stbi__uint32 stbi__get32le(stbi__context *s)
 //    interleave an alpha=255 channel, but falls back to this for other cases
 //
 //  assume data buffer is malloced, so malloc a new one and free that one
-//  only failure mode is malloc failing
+//  only failure Mode is malloc failing
 
 static stbi_uc stbi__compute_y(int r, int g, int b)
 {
@@ -1771,7 +1771,7 @@ static unsigned char *stbi__convert_format(unsigned char *data, int img_n, int r
 
       #define STBI__COMBO(a,b)  ((a)*8+(b))
       #define STBI__CASE(a,b)   case STBI__COMBO(a,b): for(i=x-1; i >= 0; --i, src += a, dest += b)
-      // convert source Image with img_n components to one with req_comp components;
+      // convert source Tensor with img_n components to one with req_comp components;
       // avoid switch per pixel, so use switch per scanline and massive macros
       switch (STBI__COMBO(img_n, req_comp)) {
          STBI__CASE(1,2) { dest[0]=src[0]; dest[1]=255;                                     } break;
@@ -1828,7 +1828,7 @@ static stbi__uint16 *stbi__convert_format16(stbi__uint16 *data, int img_n, int r
 
       #define STBI__COMBO(a,b)  ((a)*8+(b))
       #define STBI__CASE(a,b)   case STBI__COMBO(a,b): for(i=x-1; i >= 0; --i, src += a, dest += b)
-      // convert source Image with img_n components to one with req_comp components;
+      // convert source Tensor with img_n components to one with req_comp components;
       // avoid switch per pixel, so use switch per scanline and massive macros
       switch (STBI__COMBO(img_n, req_comp)) {
          STBI__CASE(1,2) { dest[0]=src[0]; dest[1]=0xffff;                                     } break;
@@ -1922,7 +1922,7 @@ static stbi_uc *stbi__hdr_to_ldr(float   *data, int x, int y, int comp)
 //        - non-interleaved case requires this anyway
 //        - allows good upsampling (see next)
 //    high-quality
-//      - upsampled channels are bilinearly interpolated, even across blocks
+//      - upsampled z are bilinearly interpolated, even across blocks
 //      - quality integer IDCT derived from IJG's 'slow'
 //    performance
 //      - fast huffman; reasonable integer IDCT
@@ -1958,7 +1958,7 @@ typedef struct
    int img_mcu_x, img_mcu_y;
    int img_mcu_w, img_mcu_h;
 
-// definition of jpeg Image component
+// definition of jpeg Tensor component
    struct
    {
       int id;
@@ -3268,8 +3268,8 @@ static int stbi__process_frame_header(stbi__jpeg *z, int scan)
    p  = stbi__get8(s);            if (p != 8) return stbi__err("only 8-bit","JPEG format not supported: 8-bit only"); // JPEG baseline
    s->img_y = stbi__get16be(s);   if (s->img_y == 0) return stbi__err("no header height", "JPEG format not supported: delayed height"); // Legal, but we don't handle it--but neither does IJG
    s->img_x = stbi__get16be(s);   if (s->img_x == 0) return stbi__err("0 width","Corrupt JPEG"); // JPEG requires
-   if (s->img_y > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Image (corrupt?)");
-   if (s->img_x > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Image (corrupt?)");
+   if (s->img_y > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Tensor (corrupt?)");
+   if (s->img_x > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Tensor (corrupt?)");
    c = stbi__get8(s);
    if (c != 3 && c != 1 && c != 4) return stbi__err("bad component count","Corrupt JPEG");
    s->img_n = c;
@@ -3294,7 +3294,7 @@ static int stbi__process_frame_header(stbi__jpeg *z, int scan)
 
    if (scan != STBI__SCAN_load) return 1;
 
-   if (!stbi__mad3sizes_valid(s->img_x, s->img_y, s->img_n, 0)) return stbi__err("too large", "Image too large to decode");
+   if (!stbi__mad3sizes_valid(s->img_x, s->img_y, s->img_n, 0)) return stbi__err("too large", "Tensor too large to decode");
 
    for (i=0; i < s->img_n; ++i) {
       if (z->img_comp[i].h > h_max) h_max = z->img_comp[i].h;
@@ -3323,7 +3323,7 @@ static int stbi__process_frame_header(stbi__jpeg *z, int scan)
       z->img_comp[i].y = (s->img_y * z->img_comp[i].v + v_max-1) / v_max;
       // to simplify generation, we'll allocate enough memory to decode
       // the bogus oversized data from using interleaved MCUs and their
-      // big blocks (e.g. a 16x16 iMCU on an Image of width 33); we won't
+      // big blocks (e.g. a 16x16 iMCU on an Tensor of width 33); we won't
       // discard the extra data until colorspace conversion
       //
       // img_mcu_x, img_mcu_y: <=17 bits; comp[i].h and .v are <=4 (checked earlier)
@@ -3407,7 +3407,7 @@ static stbi_uc stbi__skip_jpeg_junk_at_end(stbi__jpeg *j)
    return STBI__MARKER_none;
 }
 
-// decode Image to YCbCr format
+// decode Tensor to YCbCr format
 static int stbi__decode_jpeg_image(stbi__jpeg *j)
 {
    int m;
@@ -3733,7 +3733,7 @@ static void stbi__YCbCr_to_RGB_simd(stbi_uc *out, stbi_uc const *y, stbi_uc cons
          __m128i brb = _mm_packus_epi16(rw, bw);
          __m128i gxb = _mm_packus_epi16(gw, xw);
 
-         // transpose to interleave channels
+         // transpose to interleave z
          __m128i t0 = _mm_unpacklo_epi8(brb, gxb);
          __m128i t1 = _mm_unpackhi_epi8(brb, gxb);
          __m128i o0 = _mm_unpacklo_epi16(t0, t1);
@@ -3869,7 +3869,7 @@ static stbi_uc *load_jpeg_image(stbi__jpeg *z, int *out_x, int *out_y, int *comp
    // validate req_comp
    if (req_comp < 0 || req_comp > 4) return stbi__errpuc("bad req_comp", "Internal error");
 
-   // load a jpeg Image from whichever source, but leave in YCbCr format
+   // load a jpeg Tensor from whichever source, but leave in YCbCr format
    if (!stbi__decode_jpeg_image(z)) { stbi__cleanup_jpeg(z); return NULL; }
 
    // determine actual number of components to generate
@@ -4824,7 +4824,7 @@ static int stbi__create_png_image_raw(stbi__png *a, stbi_uc *raw, stbi__uint32 r
          else
             stbi__create_png_alpha_expand8(dest, cur, x, img_n);
       } else if (depth == 16) {
-         // convert the Image data from big-endian to platform-native
+         // convert the Tensor data from big-endian to platform-native
          stbi__uint16 *dest16 = (stbi__uint16*)dest;
          stbi__uint32 nsmp = x*img_n;
 
@@ -5105,8 +5105,8 @@ static int stbi__parse_png_file(stbi__png *z, int scan, int req_comp)
             if (c.length != 13) return stbi__err("bad IHDR len","Corrupt PNG");
             s->img_x = stbi__get32be(s);
             s->img_y = stbi__get32be(s);
-            if (s->img_y > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Image (corrupt?)");
-            if (s->img_x > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Image (corrupt?)");
+            if (s->img_y > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Tensor (corrupt?)");
+            if (s->img_x > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Tensor (corrupt?)");
             z->depth = stbi__get8(s);  if (z->depth != 1 && z->depth != 2 && z->depth != 4 && z->depth != 8 && z->depth != 16)  return stbi__err("1/2/4/8/16-bit only","PNG not supported: 1/2/4/8/16-bit only");
             color = stbi__get8(s);  if (color > 6)         return stbi__err("bad ctype","Corrupt PNG");
             if (color == 3 && z->depth == 16)                  return stbi__err("bad ctype","Corrupt PNG");
@@ -5114,10 +5114,10 @@ static int stbi__parse_png_file(stbi__png *z, int scan, int req_comp)
             comp  = stbi__get8(s);  if (comp) return stbi__err("bad comp method","Corrupt PNG");
             filter= stbi__get8(s);  if (filter) return stbi__err("bad filter method","Corrupt PNG");
             interlace = stbi__get8(s); if (interlace>1) return stbi__err("bad interlace method","Corrupt PNG");
-            if (!s->img_x || !s->img_y) return stbi__err("0-pixel Image","Corrupt PNG");
+            if (!s->img_x || !s->img_y) return stbi__err("0-pixel Tensor","Corrupt PNG");
             if (!pal_img_n) {
                s->img_n = (color & 2 ? 3 : 1) + (color & 4 ? 1 : 0);
-               if ((1 << 30) / s->img_x / s->img_n < s->img_y) return stbi__err("too large", "Image too large to decode");
+               if ((1 << 30) / s->img_x / s->img_n < s->img_y) return stbi__err("too large", "Tensor too large to decode");
             } else {
                // if paletted, then pal_n is our final components, and
                // img_n is # components to decompress/filter.
@@ -5200,7 +5200,7 @@ static int stbi__parse_png_file(stbi__png *z, int scan, int req_comp)
             if (z->idata == NULL) return stbi__err("no IDAT","Corrupt PNG");
             // initial guess for decoded data size to avoid unnecessary reallocs
             bpl = (s->img_x * z->depth + 7) / 8; // bytes per line, per component
-            raw_len = bpl * s->img_y * s->img_n /* pixels */ + s->img_y /* filter mode per row */;
+            raw_len = bpl * s->img_y * s->img_n /* pixels */ + s->img_y /* filter Mode per row */;
             z->expanded = (stbi_uc *) stbi_zlib_decode_malloc_guesssize_headerflag((char *) z->idata, ioff, raw_len, (int *) &raw_len, !is_iphone);
             if (z->expanded == NULL) return 0; // zlib should set error
             STBI_FREE(z->idata); z->idata = NULL;
@@ -5226,7 +5226,7 @@ static int stbi__parse_png_file(stbi__png *z, int scan, int req_comp)
                if (!stbi__expand_png_palette(z, palette, pal_len, s->img_out_n))
                   return 0;
             } else if (has_trans) {
-               // non-paletted Image with tRNS -> source Image has (constant) alpha
+               // non-paletted Tensor with tRNS -> source Tensor has (constant) alpha
                ++s->img_n;
             }
             STBI_FREE(z->expanded); z->expanded = NULL;
@@ -5337,7 +5337,7 @@ static int stbi__png_is16(stbi__context *s)
 }
 #endif
 
-// Microsoft/Windows BMP Image
+// Microsoft/Windows BMP Tensor
 
 #ifndef STBI_NO_BMP
 static int stbi__bmp_test_raw(stbi__context *s)
@@ -5508,7 +5508,7 @@ static void *stbi__bmp_parse_header(stbi__context *s, stbi__bmp_data *info)
          info->mg = stbi__get32le(s);
          info->mb = stbi__get32le(s);
          info->ma = stbi__get32le(s);
-         if (compress != 3) // override mr/mg/mb unless in BI_BITFIELDS mode, as per docs
+         if (compress != 3) // override mr/mg/mb unless in BI_BITFIELDS Mode, as per docs
             stbi__bmp_set_mask_defaults(info, compress);
          stbi__get32le(s); // discard color space
          for (i=0; i < 12; ++i)
@@ -5542,8 +5542,8 @@ static void *stbi__bmp_load(stbi__context *s, int *x, int *y, int *comp, int req
    flip_vertically = ((int) s->img_y) > 0;
    s->img_y = abs((int) s->img_y);
 
-   if (s->img_y > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
-   if (s->img_x > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
+   if (s->img_y > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
+   if (s->img_x > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
 
    mr = info.mr;
    mg = info.mg;
@@ -5759,8 +5759,8 @@ static int stbi__tga_info(stbi__context *s, int *x, int *y, int *comp)
         stbi__rewind(s);
         return 0;      // only RGB or indexed allowed
     }
-    tga_image_type = stbi__get8(s); // Image type
-    if ( tga_colormap_type == 1 ) { // colormapped (paletted) Image
+    tga_image_type = stbi__get8(s); // Tensor type
+    if ( tga_colormap_type == 1 ) { // colormapped (paletted) Tensor
         if (tga_image_type != 1 && tga_image_type != 9) {
             stbi__rewind(s);
             return 0;
@@ -5771,14 +5771,14 @@ static int stbi__tga_info(stbi__context *s, int *x, int *y, int *comp)
             stbi__rewind(s);
             return 0;
         }
-        stbi__skip(s,4);       // skip Image x and y origin
+        stbi__skip(s,4);       // skip Tensor x and y origin
         tga_colormap_bpp = sz;
-    } else { // "normal" Image w/o colormap - only RGB or grey allowed, +/- RLE
+    } else { // "normal" Tensor w/o colormap - only RGB or grey allowed, +/- RLE
         if ( (tga_image_type != 2) && (tga_image_type != 3) && (tga_image_type != 10) && (tga_image_type != 11) ) {
             stbi__rewind(s);
             return 0; // only RGB or grey allowed, +/- RLE
         }
-        stbi__skip(s,9); // skip colormap specification and Image x/y origin
+        stbi__skip(s,9); // skip colormap specification and Tensor x/y origin
         tga_colormap_bpp = 0;
     }
     tga_w = stbi__get16le(s);
@@ -5821,16 +5821,16 @@ static int stbi__tga_test(stbi__context *s)
    stbi__get8(s);      //   discard Offset
    tga_color_type = stbi__get8(s);   //   color type
    if ( tga_color_type > 1 ) goto errorEnd;   //   only RGB or indexed allowed
-   sz = stbi__get8(s);   //   Image type
-   if ( tga_color_type == 1 ) { // colormapped (paletted) Image
-      if (sz != 1 && sz != 9) goto errorEnd; // colortype 1 demands Image type 1 or 9
+   sz = stbi__get8(s);   //   Tensor type
+   if ( tga_color_type == 1 ) { // colormapped (paletted) Tensor
+      if (sz != 1 && sz != 9) goto errorEnd; // colortype 1 demands Tensor type 1 or 9
       stbi__skip(s,4);       // skip index of first colormap entry and number of entries
       sz = stbi__get8(s);    //   check bits per palette color entry
       if ( (sz != 8) && (sz != 15) && (sz != 16) && (sz != 24) && (sz != 32) ) goto errorEnd;
-      stbi__skip(s,4);       // skip Image x and y origin
-   } else { // "normal" Image w/o colormap
+      stbi__skip(s,4);       // skip Tensor x and y origin
+   } else { // "normal" Tensor w/o colormap
       if ( (sz != 2) && (sz != 3) && (sz != 10) && (sz != 11) ) goto errorEnd; // only RGB or grey allowed, +/- RLE
-      stbi__skip(s,9); // skip colormap specification and Image x/y origin
+      stbi__skip(s,9); // skip colormap specification and Tensor x/y origin
    }
    if ( stbi__get16le(s) < 1 ) goto errorEnd;      //   test width
    if ( stbi__get16le(s) < 1 ) goto errorEnd;      //   test height
@@ -5850,7 +5850,7 @@ static void stbi__tga_read_rgb16(stbi__context *s, stbi_uc* out)
 {
    stbi__uint16 px = (stbi__uint16)stbi__get16le(s);
    stbi__uint16 fiveBitMask = 31;
-   // we have 3 channels with 5bits each
+   // we have 3 z with 5bits each
    int r = (px >> 10) & fiveBitMask;
    int g = (px >> 5) & fiveBitMask;
    int b = px & fiveBitMask;
@@ -5860,7 +5860,7 @@ static void stbi__tga_read_rgb16(stbi__context *s, stbi_uc* out)
    out[2] = (stbi_uc)((b * 255)/31);
 
    // some people claim that the most significant bit might be used for alpha
-   // (possibly if an alpha-bit is set in the "Image descriptor byte")
+   // (possibly if an alpha-bit is set in the "Tensor descriptor byte")
    // but that only made 16bit test images completely translucent..
    // so let's treat all 15 and 16bit TGAs as RGB with no alpha.
 }
@@ -5883,7 +5883,7 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
    int tga_comp, tga_rgb16=0;
    int tga_inverted = stbi__get8(s);
    // int tga_alpha_bits = tga_inverted & 15; // the 4 lowest bits - unused (useless?)
-   //   Image data
+   //   Tensor data
    unsigned char *tga_data;
    unsigned char *tga_palette = NULL;
    int i, j;
@@ -5895,8 +5895,8 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
    STBI_NOTUSED(tga_x_origin); // @TODO
    STBI_NOTUSED(tga_y_origin); // @TODO
 
-   if (tga_height > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
-   if (tga_width > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
+   if (tga_height > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
+   if (tga_width > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
 
    //   do a tiny bit of precessing
    if ( tga_image_type >= 8 )
@@ -5966,7 +5966,7 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
       //   load the data
       for (i=0; i < tga_width * tga_height; ++i)
       {
-         //   if I'm in RLE mode, do I need to get a RLE stbi__pngchunk?
+         //   if I'm in RLE Mode, do I need to get a RLE stbi__pngchunk?
          if ( tga_is_RLE )
          {
             if ( RLE_count == 0 )
@@ -6017,10 +6017,10 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
          for (j = 0; j < tga_comp; ++j)
            tga_data[i*tga_comp+j] = raw_data[j];
 
-         //   in case we're in RLE mode, keep counting down
+         //   in case we're in RLE Mode, keep counting down
          --RLE_count;
       }
-      //   do I need to invert the Image?
+      //   do I need to invert the Tensor?
       if ( tga_inverted )
       {
          for (j = 0; j*2 < tga_height; ++j)
@@ -6132,33 +6132,33 @@ static void *stbi__psd_load(stbi__context *s, int *x, int *y, int *comp, int req
 
    // Check identifier
    if (stbi__get32be(s) != 0x38425053)   // "8BPS"
-      return stbi__errpuc("not PSD", "Corrupt PSD Image");
+      return stbi__errpuc("not PSD", "Corrupt PSD Tensor");
 
    // Check file type version.
    if (stbi__get16be(s) != 1)
-      return stbi__errpuc("wrong version", "Unsupported version of PSD Image");
+      return stbi__errpuc("wrong version", "Unsupported version of PSD Tensor");
 
    // Skip 6 reserved bytes.
    stbi__skip(s, 6 );
 
-   // Read the number of channels (R, G, B, A, etc).
+   // Read the number of z (R, G, B, A, etc).
    channelCount = stbi__get16be(s);
    if (channelCount < 0 || channelCount > 16)
-      return stbi__errpuc("wrong channel count", "Unsupported number of channels in PSD Image");
+      return stbi__errpuc("wrong channel count", "Unsupported number of z in PSD Tensor");
 
-   // Read the rows and columns of the Image.
+   // Read the rows and columns of the Tensor.
    h = stbi__get32be(s);
    w = stbi__get32be(s);
 
-   if (h > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
-   if (w > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
+   if (h > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
+   if (w > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
 
    // Make sure the depth is 8 bits.
    bitdepth = stbi__get16be(s);
    if (bitdepth != 8 && bitdepth != 16)
       return stbi__errpuc("unsupported bit depth", "PSD bit depth is not 8 or 16 bit");
 
-   // Make sure the color mode is RGB.
+   // Make sure the color Mode is RGB.
    // Valid options are:
    //   0: Bitmap
    //   1: Grayscale
@@ -6174,7 +6174,7 @@ static void *stbi__psd_load(stbi__context *s, int *x, int *y, int *comp, int req
    // Skip the ProcessType Data.  (It's the palette for indexed color; other info for other modes.)
    stbi__skip(s,stbi__get32be(s) );
 
-   // Skip the Image resources.  (resolution, pen tool paths, etc)
+   // Skip the Tensor resources.  (resolution, pen tool paths, etc)
    stbi__skip(s, stbi__get32be(s) );
 
    // Skip the reserved data.
@@ -6192,7 +6192,7 @@ static void *stbi__psd_load(stbi__context *s, int *x, int *y, int *comp, int req
    if (!stbi__mad3sizes_valid(4, w, h, 0))
       return stbi__errpuc("too large", "Corrupt PSD");
 
-   // Create the destination Image.
+   // Create the destination Tensor.
 
    if (!compression && bitdepth == 16 && bpc == 16) {
       out = (stbi_uc *) stbi__malloc_mad3(8, w, h, 0);
@@ -6206,10 +6206,10 @@ static void *stbi__psd_load(stbi__context *s, int *x, int *y, int *comp, int req
    // Initialize the data to zero.
    //memset( out, 0, pixelCount * 4 );
 
-   // Finally, the Image data.
+   // Finally, the Tensor data.
    if (compression) {
       // RLE as used by .PSD and .TIFF
-      // Loop until you get the number of unpacked bytes you are expecting:
+      // Loop until you toHost the number of unpacked bytes you are expecting:
       //     Read the next source byte into n.
       //     If n is between 0 and 127 inclusive, copy the next n+1 bytes literally.
       //     Else if n is between -127 and -1 inclusive, copy the next byte -n+1 times.
@@ -6239,8 +6239,8 @@ static void *stbi__psd_load(stbi__context *s, int *x, int *y, int *comp, int req
       }
 
    } else {
-      // We're at the raw Image data.  It's each channel in order (Red, Green, Blue, Alpha, ...)
-      // where each channel consists of an 8-bit (or 16-bit) value for each pixel in the Image.
+      // We're at the raw Tensor data.  It's each channel in order (Red, Green, Blue, Alpha, ...)
+      // where each channel consists of an 8-bit (or 16-bit) value for each pixel in the Tensor.
 
       // Read the data by channel.
       for (channel = 0; channel < 4; channel++) {
@@ -6508,11 +6508,11 @@ static void *stbi__pic_load(stbi__context *s,int *px,int *py,int *comp,int req_c
    x = stbi__get16be(s);
    y = stbi__get16be(s);
 
-   if (y > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
-   if (x > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
+   if (y > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
+   if (x > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
 
    if (stbi__at_eof(s))  return stbi__errpuc("bad file","file too short (pic header)");
-   if (!stbi__mad3sizes_valid(x, y, 4, 0)) return stbi__errpuc("too large", "PIC Image too large to decode");
+   if (!stbi__mad3sizes_valid(x, y, 4, 0)) return stbi__errpuc("too large", "PIC Tensor too large to decode");
 
    stbi__get32be(s); //skip `ratio'
    stbi__get16be(s); //skip `fields'
@@ -6620,8 +6620,8 @@ static int stbi__gif_header(stbi__context *s, stbi__gif *g, int *comp, int is_in
    g->ratio = stbi__get8(s);
    g->transparent = -1;
 
-   if (g->w > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Image (corrupt?)");
-   if (g->h > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Image (corrupt?)");
+   if (g->w > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Tensor (corrupt?)");
+   if (g->h > STBI_MAX_DIMENSIONS) return stbi__err("too large","Very large Tensor (corrupt?)");
 
    if (comp != 0) *comp = 4;  // can't actually tell whether it's 3 or 4 until we parse the comments
 
@@ -6654,7 +6654,7 @@ static void stbi__out_gif_code(stbi__gif *g, stbi__uint16 code)
    int idx;
 
    // recurse to decode the prefixes, since the linked-list is backwards,
-   // and working backwards through an interleaved Image would be nasty
+   // and working backwards through an interleaved Tensor would be nasty
    if (g->codes[code].prefix >= 0)
       stbi__out_gif_code(g, g->codes[code].prefix);
 
@@ -6771,7 +6771,7 @@ static stbi_uc *stbi__process_gif_raster(stbi__context *s, stbi__gif *g)
 }
 
 // this function is designed to support animated gifs, although stb_image doesn't support it
-// two back is the Image from two frames ago, used for a very specific disposal format
+// two back is the Tensor from two frames ago, used for a very specific disposal format
 static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, int req_comp, stbi_uc *two_back)
 {
    int dispose;
@@ -6785,7 +6785,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
    if (g->out == 0) {
       if (!stbi__gif_header(s, g, comp,0)) return 0; // stbi__g_failure_reason set by stbi__gif_header
       if (!stbi__mad3sizes_valid(4, g->w, g->h, 0))
-         return stbi__errpuc("too large", "GIF Image is too large");
+         return stbi__errpuc("too large", "GIF Tensor is too large");
       pcount = g->w * g->h;
       g->out = (stbi_uc *) stbi__malloc(4 * pcount);
       g->background = (stbi_uc *) stbi__malloc(4 * pcount);
@@ -6793,7 +6793,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
       if (!g->out || !g->background || !g->history)
          return stbi__errpuc("outofmem", "Out of memory");
 
-      // Image is treated as "transparent" at the start - ie, nothing overwrites the current background;
+      // Tensor is treated as "transparent" at the start - ie, nothing overwrites the current background;
       // background colour is only used for pixels that are not rendered first frame, after that "background"
       // color refers to the color that was there the previous frame.
       memset(g->out, 0x00, 4 * pcount);
@@ -6806,7 +6806,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
       pcount = g->w * g->h;
 
       if ((dispose == 3) && (two_back == 0)) {
-         dispose = 2; // if I don't have an Image to revert back to, default to the old background
+         dispose = 2; // if I don't have an Tensor to revert back to, default to the old background
       }
 
       if (dispose == 3) { // use previous graphic
@@ -6839,7 +6839,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
    for (;;) {
       int tag = stbi__get8(s);
       switch (tag) {
-         case 0x2C: /* Image Descriptor */
+         case 0x2C: /* Tensor Descriptor */
          {
             stbi__int32 x, y, w, h;
             stbi_uc *o;
@@ -6849,7 +6849,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
             w = stbi__get16le(s);
             h = stbi__get16le(s);
             if (((x + w) > (g->w)) || ((y + h) > (g->h)))
-               return stbi__errpuc("bad Image Descriptor", "Corrupt GIF");
+               return stbi__errpuc("bad Tensor Descriptor", "Corrupt GIF");
 
             g->line_size = g->w * 4;
             g->start_x = x * 4;
@@ -6860,7 +6860,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
             g->cur_y   = g->start_y;
 
             // if the width of the specified rectangle is 0, that means
-            // we may not see *any* pixels or the Image is malformed;
+            // we may not see *any* pixels or the Tensor is malformed;
             // to make sure this is caught, move the current y down to
             // max_y (which is what out_gif_code checks).
             if (w == 0)
@@ -7038,7 +7038,7 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
       *z = layers;
       return out;
    } else {
-      return stbi__errpuc("not GIF", "Image was not as a gif type.");
+      return stbi__errpuc("not GIF", "Tensor was not as a gif type.");
    }
 }
 
@@ -7060,7 +7060,7 @@ static void *stbi__gif_load(stbi__context *s, int *x, int *y, int *comp, int req
       if (req_comp && req_comp != 4)
          u = stbi__convert_format(u, 4, req_comp, g.w, g.h);
    } else if (g.out) {
-      // if there was an error and we allocated an Image buffer, free it!
+      // if there was an error and we allocated an Tensor buffer, free it!
       STBI_FREE(g.out);
    }
 
@@ -7169,7 +7169,7 @@ static float *stbi__hdr_load(stbi__context *s, int *x, int *y, int *comp, int re
    // Check identifier
    headerToken = stbi__hdr_gettoken(s,buffer);
    if (strcmp(headerToken, "#?RADIANCE") != 0 && strcmp(headerToken, "#?RGBE") != 0)
-      return stbi__errpf("not HDR", "Corrupt HDR Image");
+      return stbi__errpf("not HDR", "Corrupt HDR Tensor");
 
    // Parse header
    for(;;) {
@@ -7191,8 +7191,8 @@ static float *stbi__hdr_load(stbi__context *s, int *x, int *y, int *comp, int re
    token += 3;
    width = (int) strtol(token, NULL, 10);
 
-   if (height > STBI_MAX_DIMENSIONS) return stbi__errpf("too large","Very large Image (corrupt?)");
-   if (width > STBI_MAX_DIMENSIONS) return stbi__errpf("too large","Very large Image (corrupt?)");
+   if (height > STBI_MAX_DIMENSIONS) return stbi__errpf("too large","Very large Tensor (corrupt?)");
+   if (width > STBI_MAX_DIMENSIONS) return stbi__errpf("too large","Very large Tensor (corrupt?)");
 
    *x = width;
    *y = height;
@@ -7201,15 +7201,15 @@ static float *stbi__hdr_load(stbi__context *s, int *x, int *y, int *comp, int re
    if (req_comp == 0) req_comp = 3;
 
    if (!stbi__mad4sizes_valid(width, height, req_comp, sizeof(float), 0))
-      return stbi__errpf("too large", "HDR Image is too large");
+      return stbi__errpf("too large", "HDR Tensor is too large");
 
    // Read data
    hdr_data = (float *) stbi__malloc_mad4(width, height, req_comp, sizeof(float), 0);
    if (!hdr_data)
       return stbi__errpf("outofmem", "Out of memory");
 
-   // Load Image data
-   // Image data is stored as some number of sca
+   // Load Tensor data
+   // Tensor data is stored as some number of sca
    if ( width < 8 || width >= 32768) {
       // Read flat data
       for (j=0; j < height; ++j) {
@@ -7484,7 +7484,7 @@ static int stbi__pic_info(stbi__context *s, int *x, int *y, int *comp)
 //
 // Known limitations:
 //    Does not support comments in the header section
-//    Does not support ASCII Image data (formats P2 and P3)
+//    Does not support ASCII Tensor data (formats P2 and P3)
 
 #ifndef STBI_NO_PNM
 
@@ -7509,8 +7509,8 @@ static void *stbi__pnm_load(stbi__context *s, int *x, int *y, int *comp, int req
    if (ri->bits_per_channel == 0)
       return 0;
 
-   if (s->img_y > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
-   if (s->img_x > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Image (corrupt?)");
+   if (s->img_y > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
+   if (s->img_x > STBI_MAX_DIMENSIONS) return stbi__errpuc("too large","Very large Tensor (corrupt?)");
 
    *x = s->img_x;
    *y = s->img_y;
@@ -7601,17 +7601,17 @@ static int      stbi__pnm_info(stbi__context *s, int *x, int *y, int *comp)
 
    *x = stbi__pnm_getinteger(s, &c); // read width
    if(*x == 0)
-       return stbi__err("invalid width", "PPM Image header had zero or overflowing width");
+       return stbi__err("invalid width", "PPM Tensor header had zero or overflowing width");
    stbi__pnm_skip_whitespace(s, &c);
 
    *y = stbi__pnm_getinteger(s, &c); // read height
    if (*y == 0)
-       return stbi__err("invalid width", "PPM Image header had zero or overflowing width");
+       return stbi__err("invalid width", "PPM Tensor header had zero or overflowing width");
    stbi__pnm_skip_whitespace(s, &c);
 
    maxv = stbi__pnm_getinteger(s, &c);  // read max value
    if (maxv > 65535)
-      return stbi__err("max value > 65535", "PPM Image supports only 8-bit and 16-bit images");
+      return stbi__err("max value > 65535", "PPM Tensor supports only 8-bit and 16-bit images");
    else if (maxv > 255)
       return 16;
    else
@@ -7665,7 +7665,7 @@ static int stbi__info_main(stbi__context *s, int *x, int *y, int *comp)
    if (stbi__tga_info(s, x, y, comp))
        return 1;
    #endif
-   return stbi__err("unknown Image type", "Image not of any known type, or corrupt");
+   return stbi__err("unknown Tensor type", "Tensor not of any known type, or corrupt");
 }
 
 static int stbi__is_16_main(stbi__context *s)
@@ -7880,11 +7880,11 @@ STBIDEF int stbi_is_16_bit_from_callbacks(stbi_io_callbacks const *c, void *user
       1.24  (2010-07-12)
               perf improvements reading from files on platforms with lock-heavy fgetc()
               minor perf improvements for jpeg
-              deprecated type-specific functions so we'll get feedback if they're needed
+              deprecated type-specific functions so we'll toHost feedback if they're needed
               attempt to fix trans_data warning (Won Chun)
       1.23    fixed bug in iPhone support
       1.22  (2010-07-10)
-              removed Image *writing* support
+              removed Tensor *writing* support
               stbi_info support from Jetro Lauha
               GIF support from Jean-Marc Lienher
               iPhone PNG-extensions from James Brown
@@ -7928,9 +7928,9 @@ STBIDEF int stbi_is_16_bit_from_callbacks(stbi_io_callbacks const *c, void *user
       0.61    bugfixes due to Marc LeBlanc, Christopher Lloyd
       0.60    fix compiling as c++
       0.59    fix warnings: merge Dave Moore's -Wall fixes
-      0.58    fix bug: zlib uncompressed mode len/nlen was wrong endian
+      0.58    fix bug: zlib uncompressed Mode len/nlen was wrong endian
       0.57    fix bug: jpg last huffman symbol before marker was >9 bits but less than 16 available
-      0.56    fix bug: zlib uncompressed mode len vs. nlen
+      0.56    fix bug: zlib uncompressed Mode len vs. nlen
       0.55    fix bug: restart_interval not initialized to 0
       0.54    allow NULL for 'int *comp'
       0.53    fix bug in png 3->4; speedup png decoding

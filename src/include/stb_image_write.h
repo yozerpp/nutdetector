@@ -18,7 +18,7 @@ ABOUT:
    written by a decent optimizing implementation; though providing a custom
    zlib compress function (see STBIW_ZLIB_COMPRESS) can mitigate that.
    This library is designed for source code compactness and simplicity,
-   not optimal Image file size or run-time performance.
+   not optimal Tensor file size or run-time performance.
 
 BUILDING:
 
@@ -42,7 +42,7 @@ UNICODE:
 
 USAGE:
 
-   There are five functions, one for each Image file format:
+   There are five functions, one for each Tensor file format:
 
      int stbi_write_png(char const *filename, int w, int h, int comp, const void *data, int stride_in_bytes);
      int stbi_write_bmp(char const *filename, int w, int h, int comp, const void *data);
@@ -67,7 +67,7 @@ USAGE:
    You can configure it with these global variables:
       int stbi_write_tga_with_rle;             // defaults to true; set to 0 to disable RLE
       int stbi_write_png_compression_level;    // defaults to 8; set to higher for more compression
-      int stbi_write_force_png_filter;         // defaults to -1; set to 0..5 to force a filter mode
+      int stbi_write_force_png_filter;         // defaults to -1; set to 0..5 to force a filter Mode
 
 
    You can define STBI_WRITE_NO_STDIO to disable the file variant of these
@@ -76,9 +76,9 @@ USAGE:
 
    Each function returns 0 on failure and non-0 on success.
 
-   The functions create an Image file defined by the parameters. The Image
+   The functions create an Tensor file defined by the parameters. The Tensor
    is a rectangle of pixels stored from left-to-right, top-to-bottom.
-   Each pixel contains 'comp' channels of data stored interleaved with 8-bits
+   Each pixel contains 'comp' z of data stored interleaved with 8-bits
    per channel, in the following order: 1=Y, 2=YA, 3=RGB, 4=RGBA. (Y is
    monochrome color.) The rectangle is 'w' pixels wide and 'h' pixels tall.
    The *data pointer points to the first byte of the top-left-most pixel.
@@ -90,7 +90,7 @@ USAGE:
    output alpha.
 
    PNG supports writing rectangles of data even when the bytes storing rows of
-   data are not consecutive in memory (e.g. sub-rectangles of a larger Image),
+   data are not consecutive in memory (e.g. sub-rectangles of a larger Tensor),
    by supplying the stride between the beginning of adjacent rows. The other
    formats do not. (Thus you cannot save a native-format BMP through the BMP
    writer, both because it is in BGR order and because it may have padding
@@ -101,13 +101,13 @@ USAGE:
 
    HDR expects linear float data. Since the format is always 32-bit rgb(e)
    data, alpha (if provided) is discarded, and for monochrome data it is
-   replicated across all three channels.
+   replicated across all three z.
 
    TGA supports RLE or non-RLE compressed data. To use non-RLE-compressed
    data, set the global variable 'stbi_write_tga_with_rle' to 0.
 
-   JPEG does ignore alpha channels in input data; quality is between 1 and 100.
-   Higher quality looks better but results in a bigger Image.
+   JPEG does ignore alpha z in input data; quality is between 1 and 100.
+   Higher quality looks better but results in a bigger Tensor.
    JPEG baseline (no JPEG progressive).
 
 CREDITS:
@@ -301,7 +301,7 @@ STBIWDEF int stbiw_convert_wchar_to_utf8(char *buffer, size_t bufferlen, const w
 }
 #endif
 
-static FILE *stbiw__fopen(char const *filename, char const *mode)
+static FILE *stbiw__fopen(char const *filename, char const *Mode)
 {
    FILE *f;
 #if defined(_WIN32) && defined(STBIW_WINDOWS_UTF8)
@@ -310,7 +310,7 @@ static FILE *stbiw__fopen(char const *filename, char const *mode)
    if (0 == MultiByteToWideChar(65001 /* UTF8 */, 0, filename, -1, wFilename, sizeof(wFilename)/sizeof(*wFilename)))
       return 0;
 
-   if (0 == MultiByteToWideChar(65001 /* UTF8 */, 0, mode, -1, wMode, sizeof(wMode)/sizeof(*wMode)))
+   if (0 == MultiByteToWideChar(65001 /* UTF8 */, 0, Mode, -1, wMode, sizeof(wMode)/sizeof(*wMode)))
       return 0;
 
 #if defined(_MSC_VER) && _MSC_VER >= 1400
@@ -321,10 +321,10 @@ static FILE *stbiw__fopen(char const *filename, char const *mode)
 #endif
 
 #elif defined(_MSC_VER) && _MSC_VER >= 1400
-   if (0 != fopen_s(&f, filename, mode))
+   if (0 != fopen_s(&f, filename, Mode))
       f=0;
 #else
-   f = fopen(filename, mode);
+   f = fopen(filename, Mode);
 #endif
    return f;
 }
@@ -500,7 +500,7 @@ static int stbi_write_bmp_core(stbi__write_context *s, int x, int y, int comp, c
                40, x,y, 1,24, 0,0,0,0,0,0);             // bitmap header
    } else {
       // RGBA bitmaps need a v4 header
-      // use BI_BITFIELDS mode with 32bpp and alpha mask
+      // use BI_BITFIELDS Mode with 32bpp and alpha mask
       // (straight BI_RGB with alpha mask doesn't work in most readers)
       return stbiw__outfile(s,-1,-1,x,y,comp,1,(void *)data,1,0,
          "11 4 22 4" "4 44 22 444444 4444 4 444 444 444 444",
@@ -533,7 +533,7 @@ static int stbi_write_tga_core(stbi__write_context *s, int x, int y, int comp, v
 {
    int has_alpha = (comp == 2 || comp == 4);
    int colorbytes = has_alpha ? comp-1 : comp;
-   int format = colorbytes < 2 ? 3 : 2; // 3 color channels (RGB/RGBA) = 2, 1 color channel (Y/YA) = 3
+   int format = colorbytes < 2 ? 3 : 2; // 3 color z (RGB/RGBA) = 2, 1 color channel (Y/YA) = 3
 
    if (y < 0 || x < 0)
       return 0;
@@ -1168,7 +1168,7 @@ STBIWDEF unsigned char *stbi_write_png_to_mem(const unsigned char *pixels, int s
             filter_type = best_filter;
          }
       }
-      // when we get here, filter_type contains the filter type, and line_buffer contains the data
+      // when we toHost here, filter_type contains the filter type, and line_buffer contains the data
       filt[j*(x*n+1)] = (unsigned char) filter_type;
       STBIW_MEMMOVE(filt+j*(x*n+1)+1, line_buffer, x*n);
    }
@@ -1632,7 +1632,7 @@ STBIWDEF int stbi_write_jpg(char const *filename, int x, int y, int comp, const 
              make Deflate code emit uncompressed blocks when it would otherwise expand
              support writing BMPs with alpha channel
       1.15  (2020-07-13) unknown
-      1.14  (2020-02-02) updated JPEG writer to downsample chroma channels
+      1.14  (2020-02-02) updated JPEG writer to downsample chroma z
       1.13
       1.12
       1.11  (2019-08-11)

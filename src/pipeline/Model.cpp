@@ -13,7 +13,7 @@ namespace Model{
 
     Preprocessing::Preprocessor * preprocessor=new Preprocessing::Preprocessor(2,256);
     long double * trainOne(Image * sample){
-        preprocessor->polarize(sample, Preprocessing::GAUSSIAN);
+        preprocessor->polarize(*sample, Preprocessing::GAUSSIAN);
         unsigned int numObjects;
         auto * detector=new Detector(sample);
         Common::ObjectLabel * objects= detector->detect( &numObjects);
@@ -201,19 +201,18 @@ namespace Model{
         int idx=1;
         std::map<std::string, long double **> trainingData{};
         for(const auto &file: std::filesystem::directory_iterator(trainDir)){
-            auto * image = new Image(file.path().c_str());
-            std::cout << std::endl << "---" + std::to_string(idx++) +". Learning: " + image->fileName.fileBaseName + "---" << std::endl;
+            Image image(file.path().c_str());
+            std::cout << std::endl << "---" + std::to_string(idx++) +". Learning: " + image.fileName.fileBaseName + "---" << std::endl;
             preprocessor->polarize(image);
-            auto * detector= new Detector(image);
+            auto * detector= new Detector(&image);
             unsigned int numObjects;
             Common::ObjectLabel * objects=detector->detect(&numObjects);
-            auto ** featuresAll= FeatureExtractor::extractFeatures(objects, image, numObjects);
-            results.insert_or_assign(image->fileName.fileBaseName, toVector<long double *>(featuresAll, numObjects));
-           image->save(OUTPUT_DIR);
+            auto ** featuresAll= FeatureExtractor::extractFeatures(objects, &image, numObjects);
+            results.insert_or_assign(image.fileName.fileBaseName, toVector<long double *>(featuresAll, numObjects));
+           image.save(OUTPUT_DIR);
            delete [] featuresAll;
             delete detector;
-            delete[] image->data;
-            delete image;
+            delete[] image.data;
         }
         map<string, long double *> finalResults;
         if(normalizationScope==ALL) {
@@ -294,7 +293,7 @@ namespace Model{
         std::ifstream in1(MODEL_DATA_DIR.append(MODEL_DATA));
         nlohmann::json data=nlohmann::json::parse(in1);
         printf("%s\n", image->fileName.fileBaseName.c_str());
-        preprocessor->polarize(image, Preprocessing::GAUSSIAN);
+        preprocessor->polarize(*image, Preprocessing::GAUSSIAN);
         unsigned int numObjects;
         auto* detector=new Detector(image);
         Common::ObjectLabel * objects= detector->detect( &numObjects);

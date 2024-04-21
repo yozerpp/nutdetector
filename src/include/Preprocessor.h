@@ -10,11 +10,11 @@
 #ifndef IMG1_COMMON_H
 #include "common.h"
 #endif
-#ifndef IMG1_KERNELFUNCTIONS_CUH
-#include "KernelFunctions.cuh"
+#ifndef IMG1_KERNEL_CUH
+#include "Kernel.cuh"
 #endif
-#ifndef IMG1_IMAGE_H
-#include "Image.h"
+#ifndef IMG1_IMAGE_CUH
+#include "Image.cuh"
 #endif
 
 
@@ -27,18 +27,18 @@ namespace Preprocessing {
     private:
         int numMeans;
         int pixelRange;
-        unsigned int *distribution;
+        unsigned int * distribution;
         Common::Mean *means;
     public:
         Preprocessor(int numMeans, int pixelRange);
 
-        Image * grayscale(Image * image);
+        Image & grayscale(Image & image);
 
-        static Image *dilate(Image *image, int kernelDim);
+        Image & dilate(Image &image, int kernelDim);
 
-        Image * erode(Image * image, int kernelDim);
+        Image & erode(Image & image, int kernelDim);
 
-        Image *polarize(Image *image, Distribution distr=GAUSSIAN) ;
+        Image &polarize(Image& image, Distribution distr=GAUSSIAN);
     private:
         double averageKmeans() {
             double sum = 0.0;

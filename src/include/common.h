@@ -9,17 +9,21 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition_variable.hpp>
 #include "Image.h"
-#include "/usr/local/cuda-12.4/targets/x86_64-linux/include/cuda_runtime_api.h"
-#define RENAME_IMAGE false
+#include "cuda_runtime_api.h"
+#define OUTPUT_DIR "./out/"
+#define SHOW_STEPS true
+#define ps(image, s) {printSteps(image, s);}
 #define COLLUSION {(unsigned char)0,(unsigned char)0,(unsigned char)0}
 #define WHITE {(unsigned char)255,(unsigned char)255,(unsigned char)255}
 #define FEATURES_LENGTH 7
 #define  INLINE inline
 #define KERNEL_THREADS 32
 #define gc(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+#define thisStream *(streams.at(pthread_self()))
 inline std::random_device rd;
 inline std::mt19937 gen(rd());
 inline std::uniform_real_distribution<double> dist01(0,1);
+inline std::map<pthread_t, cudaStream_t*> streams{};
 static inline unsigned int numThreads=0;
 inline boost::mutex mtx;
 inline boost::condition_variable cond;
@@ -104,39 +108,43 @@ namespace Common {
         }
         return c;
     }
-    static INLINE KernelStruct *createGaussianKernel(int dimension, double sigma) {
-        int kernelSize = pow(dimension, 2);
-        int mean = dimension / 2;
-        double *kernel2d = Common::initializeArray((double) 0.0, kernelSize);
-        double sum = 0.0;
-        for (int i = 0; i < kernelSize; i++) {
-            int y = i / dimension;
-            int x = i % dimension;
-            kernel2d[i] = exp(-0.5 * (pow((y - mean) / sigma, 2.0) +
-                                      pow((x - mean) / sigma, 2.0)))
-                          / (2 * M_PI * sigma * sigma);
-            sum += kernel2d[i];
-            // Accumulate the kernel values
+    template<typename T>
+    static INLINE __host__ T* gaussianKernel(unsigned int len, unsigned int sigma, unsigned int dimension=2, int center=-1){
+        center=center>=0?center:(len / 2);
+        T* out=new T[len];
+        T sum=(T)0;
+        for(int i=0; i < len; i++){
+            out[i]=1/(sigma * sqrt(2*M_PI)) * exp(-0.5 *pow((i-center)*1.0 / sigma,2));
+            sum+=out[i];
         }
-        for (int i = 0; i < kernelSize; i++) {
-            kernel2d[i] /= sum;
+        for(int i=0; i < len; i++) out[i]/=sum;
+        if(dimension==2){
+            T* tmp = new T[len * len];
+            for(int i=0; i < len; i++)
+                for(int j=0; j < len; j++)
+                    tmp[i * len + j]= out[i] * out[j];
+            delete[] out;
+            out=tmp;
         }
-        double sum1 = 0.0;
-        for (int i = 0; i < kernelSize; i++) {
-            sum1 += kernel2d[i];
-        }
-        auto *ret = new KernelStruct;
-        ret->dimension = dimension;
-        ret->data = kernel2d;
-        return ret;
+        return out;
     }
 }
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+inline void __host__ __device__ gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
     if (code != cudaSuccess)
     {
+#ifndef  __NVCC__
         fprintf(stderr,"%s::%s::%d\n", cudaGetErrorString(code), file, line);
+#else
+        printf("%s::%s::%d\n", cudaGetErrorString(code), file, line);
+#endif
+#ifndef __NVCC__
         if (abort) exit(code);
+#endif
     }
+}
+inline void printSteps(Image* image,std::string &&s){
+    image->fileName.fileBaseName.append("_" + s);
+    image->save(OUTPUT_DIR);
 }
 #endif //IMG1_COMMON_H

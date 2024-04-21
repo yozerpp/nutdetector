@@ -44,12 +44,16 @@ int main(int argc, const char * argv[]){
     l.rlim_cur=stackSize;
     if(setrlimit(RLIMIT_STACK, &l)!=0)
         return 1;
+    auto* s=new cudaStream_t;
+    cudaStreamCreate(s);
+    streams.insert_or_assign(pthread_self(), s);
     opts::options_description options;
     options.add_options()("test", "run tests")("train", "run training");
     opts::variables_map args;
     opts::store(opts::parse_command_line(argc, argv, options), args);
     if(args.count("test")) test();
     if(args.count("train")) Model::train(TRAINING_DIR);
+
 //    Model::train(TRAINING_DIR);
 //    freopen("log", "w", stdout);
 //testt();

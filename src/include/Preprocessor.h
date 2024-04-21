@@ -31,7 +31,6 @@ namespace Preprocessing {
         int pixelRange;
         unsigned int *distribution;
         Common::Mean *means;
-        Common::KernelStruct *kernel;
     public:
         Preprocessor(int numMeans, int pixelRange);
 

@@ -45,12 +45,15 @@ public:
         this->channels=ch;
         this->fileName=std::move(fileName);
     }
-    void save(const char * writeDir){
+    void save(const char * writeDir) const{
         std::string absolutePath=(std::string(writeDir)).append(fileName.fileBaseName).append(fileName.fileExt);
         stbi_write_jpg(absolutePath.c_str(), x, y, channels, data, 100);
     }
     void setFileName(const char * name){
         this->fileName.fileBaseName=name;
+    }
+    unsigned int size() const{
+        return x*y*channels;
     }
 private:
     void initFileName(const char * filePath){

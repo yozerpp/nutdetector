@@ -79,7 +79,7 @@
         delete[] image->data;
         image->data=out;
         image->channels=3;
-        if(RENAME_IMAGE) image->fileName.fileBaseName.append("_detect");
+        if(SHOW_STEPS) image->fileName.fileBaseName.append("_detect");
         auto * ret= (Common::ObjectLabel*) malloc(*labelLength * sizeof(Common::ObjectLabel));
         memcpy(ret, filteredLabels.data(), *labelLength* sizeof(Common::ObjectLabel));
         labels.clear();
@@ -173,7 +173,7 @@
 //        free(image->data);
 //        image->data=out;
 //        image->channels=3;
-//        if(RENAME_IMAGE) image->fileName.fileBaseName.append("_detect");
+//        if(SHOW_STEPS) image->fileName.fileBaseName.append("_detect");
 //        auto * ret= (Common::ObjectLabel*) malloc(*labelLength * sizeof(Common::ObjectLabel));
 //        memcpy(ret, filteredLabels.data(), *labelLength* sizeof(Common::ObjectLabel));
 //        labels.clear();

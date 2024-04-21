@@ -9,44 +9,42 @@
 // Created by jonossar on 3/9/24.
 //
 namespace Preprocessing {
-    const unsigned int dilate_kernel=5;
-    const unsigned int erode_kernel=3;
+    static const unsigned int dilate_kernel=5;
+    static const unsigned int erode_kernel=3;
+    static const unsigned int gaussian_kernel_len=5;
+    static const unsigned int gaussian_kernel_sigma=2;
+    Image* gaussianFilter(Image* image){
+        auto * kernel = Common::gaussianKernel<float>(gaussian_kernel_len,gaussian_kernel_sigma);
+        auto * tmp= Kernel::Executor<unsigned char,unsigned char,Kernel::gaussian, float, float>(image->data, kernel,Kernel::gaussian(),image->x, image->y, image->channels, image->size(),gaussian_kernel_len);
+        delete[] kernel;
+        delete[]image->data;image->data=tmp;
+        if(SHOW_STEPS) ps(image,"ga");
+        return image;
+    }
     Image * Preprocessor:: grayscale(Image * image){
 
-        auto * out= Kernel::kernelFunctionsWrapper<unsigned char, unsigned char, double, Kernel::grayScale>(
-                image->data, nullptr,
-                Kernel::grayScale(), image->x,
-                image->y, image->channels,
-                image->x * image->y, 0);
+        auto * out= Kernel::Executor<unsigned char,unsigned char>(image->data, (void*)nullptr,Kernel::grayScale(),image->x, image->y, image->channels, image->size(),0);
         printf("turned into grayscale\n");
         delete[] image->data;
         image->data=out;
         image->channels=1;
+        if(SHOW_STEPS) ps(image, "g");
         return image;
     }
     Image *Preprocessor:: dilate(Image *image, int kernelDim) {
-
-        auto * out= Kernel::kernelFunctionsWrapper<unsigned char, unsigned char, double, Kernel::dilate>(
-                image->data, nullptr,
-                Kernel::dilate(), image->x,
-                image->y, image->channels,
-                image->x * image->y, kernelDim);
+        auto * out= Kernel::Executor<unsigned char,unsigned char, Kernel::dilate, void, unsigned int>(image->data, (void*)nullptr,Kernel::dilate(),image->x, image->y, image->channels, image->size(),0);
         printf("dilated\n");
         delete[] image->data;
         image->data=out;
-        if(RENAME_IMAGE) image->fileName.fileBaseName.append("_dilate");
+        if(SHOW_STEPS) ps(image, "d");
         return image;
     }
     Image * Preprocessor:: erode(Image * image, int kernelDim){
-        auto * out= Kernel::kernelFunctionsWrapper<unsigned char, unsigned char, double, Kernel::erode>(
-                image->data, nullptr,
-                Kernel::erode(), image->x,
-                image->y, image->channels,
-                image->x * image->y, kernelDim);
+        auto * out= Kernel::Executor<unsigned char,unsigned char, Kernel::erode, void, unsigned int>(image->data, (void*)nullptr,Kernel::erode(),image->x, image->y, image->channels, image->size(),0);
         printf("eroded\n");
         delete[] image->data;
         image->data=out;
-        if(RENAME_IMAGE) image->fileName.fileBaseName.append("_erode");
+        if(SHOW_STEPS) ps(image, "e");
         return image;
     }
     Image * Preprocessor::polarize(Image *image, Distribution distr) {
@@ -55,23 +53,11 @@ namespace Preprocessing {
         if (image->channels != 1)
             image= grayscale(image);
         if (distr == STRAIGHT ){
-            distribution=Common::initializeArray((unsigned int) 0, pixelRange);
-            for (int i = 0; i < image->x * image->y; i++)
-                distribution[image->data[i]]++;
+            distribution=Kernel::Executor<unsigned char,unsigned int>(image->data, (void*)nullptr,Kernel::distribution(),image->x, image->y, image->channels, 256,0);
         }
         else {
-            this->kernel = Common::createGaussianKernel(15, 3);
-//                cpuDistr(image);
-            distribution= Kernel::kernelFunctionsWrapper<unsigned char, unsigned int, double, Kernel::distribution>(
-                    image->data,
-                    kernel->data,
-                    Kernel::distribution(),
-                    image->x,
-                    image->y, 1,
-                    pixelRange,
-                    kernel->dimension);
-            delete[] this->kernel->data;
-            delete this->kernel;
+            image= gaussianFilter(image);
+            distribution= Kernel::Executor<unsigned char,unsigned int>(image->data, (void*)nullptr,Kernel::distribution(),image->x, image->y, image->channels, 256,0);
         }
         printf("initialized kMean values: ");
         for (int i = 0; i < numMeans; i++) {
@@ -84,34 +70,21 @@ namespace Preprocessing {
         for (int i = 0; i < numMeans; i++)
             printf("%f, ", means[i].finalSum);
         printf("\n");
-        if (distr == STRAIGHT)
-            for (int i = 0; i < image->x * image->y; i++){
-                image->data[i]=isHigherMean(findClosestKmean(image->data[i])) ? (pixelRange - 1) : 0;
-            }
-        else if (distr == GAUSSIAN) {
-            this->kernel = Common::createGaussianKernel(11, 2);
-             auto *newData= Kernel::kernelFunctionsWrapper<unsigned char, unsigned char, double, Kernel::gaussianMean>(
-                     image->data,
-                     kernel->data,
-                     Kernel::gaussianMean(means, numMeans),
-                     image->x,
-                     image->y, 1,
-                     image->x *
-                     image->y,
-                     kernel->dimension);
-//            for (int i=0; i<image->x*image->y; i++){
-//                newData[i] = isHigherMean(findClosestKmean(newData[i])) ? (unsigned char)(pixelRange-1) :(unsigned char)0 ;
-//            }
-            delete[] image->data;
-            delete[]  this->kernel->data;
-            delete[] distribution;
-            delete this->kernel;
-            image->data = newData;
+        unsigned char*out;
+        if (distr == STRAIGHT){
+             out=Kernel::Executor<unsigned char,unsigned char>(image->data, (void*)nullptr,Kernel::cluster(means, numMeans),image->x, image->y, image->channels, image->size(),0);
+            if(SHOW_STEPS) ps(image, "b(s)");
         }
-        if(RENAME_IMAGE) image->fileName.fileBaseName.append(distr == STRAIGHT ? "_straight" : "_gaussian");
-//        image= erode(image,erode_kernel);
-//        image= dilate(image,dilate_kernel);
+        else {
+            image = gaussianFilter(image);
+            out = Kernel::Executor<unsigned char, unsigned char>(image->data, (void *) nullptr,
+                                                                 Kernel::cluster(means, numMeans), image->x, image->y,
+                                                                 image->channels, image->size(), 0);
+            if(SHOW_STEPS) ps(image, "b(g)");
+        }
+        image->data = out;
         printf("finished binary conversion\n");
+        delete[] distribution;
         delete[]means;
         return image;
     }

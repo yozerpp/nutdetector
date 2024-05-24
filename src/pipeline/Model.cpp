@@ -260,8 +260,8 @@ namespace Model {
     /** CovarianceDistanceCalculator
      * this class labels the image by measuring the mahalanobis distance between the features of the input object and means of the classes in the training data.
      */
-    struct CovarianceDistanceCalculater : public DataManager{
-        CovarianceDistanceCalculater(): DataManager(){}
+    struct CovarianceDistanceCalculator : public DataManager{
+        CovarianceDistanceCalculator(): DataManager(){}
         inline void storeMetadata(const Matrix<dataType>** all, const int len)override{
             DataManager::storeMetadata(all, len);
         }
@@ -295,10 +295,10 @@ namespace Model {
     /** DumpDistance calculator
      * this class is a performs labeling by finding @p n number of closest objects from the training data and assigning the _detect which is prominent among the found objects.
      */
-    struct DumpStorageProvider: public DataManager{
+    struct DumpDistanceCalculator: public DataManager{
     public:
         int count;
-        DumpStorageProvider(): DataManager(), count(3){}
+        DumpDistanceCalculator(): DataManager(), count(3){}
         inline void store(std::string label,const Matrix<dataType>& that)override{
             DataManager::store("raw", data["classes"][label], that);
         }
@@ -345,13 +345,13 @@ namespace Model {
         for(int i=0; i<s; i++){
             switch (storageMethods[i]) {
                 case DistanceMethod::Covariance:
-                    storageProviders[i]=(DataManager*) new CovarianceDistanceCalculater;
+                    storageProviders[i]=(DataManager*) new CovarianceDistanceCalculator;
                     break;
                 case DistanceMethod::Mean:
                     storageProviders[i]=(DataManager*) new MeanDistanceCalculater();
                     break;
                 case DistanceMethod::Dump:
-                    auto* ss= new DumpStorageProvider();
+                    auto* ss= new DumpDistanceCalculator();
                     ss->count= closestTest;
                     storageProviders[i]=(DataManager*)ss;
                     break;

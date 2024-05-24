@@ -13,7 +13,9 @@
 
 
 namespace Kernel {
-    /** @paragraph These declarations of algorithms/functors used in kernel, structure of these functions are they perform their operation on data through @code run() @code method. This file contains summaries about these methods in documentation together with summaries of other members of the functor/algorithm, you can find their definitions of these methods in @p Kernel.cu. **/
+
+    /** @paragraph These declarations of algorithms/functors used in kernel, structure of these functions are they perform their operation on data through @code run() @code method. This file contains summaries about these methods in documentation together with summaries of other members of the functor/algorithm, you can find their definitions of these methods in @p Kernel.cu . **/
+
     /** calculates histogram of the input
      * this function calculates the weighted sum of every pixel @code i*data[i] @code where @p i is index and @p data[i] is strength of the pixel/element.
      * @tparam T type of data

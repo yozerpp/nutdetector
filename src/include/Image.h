@@ -9,9 +9,29 @@
 #include <cstring>
 #include "stb_image.h"
 #include "stb_image_write.h"
-typedef struct{
+
+#include <filesystem>
+#include <utility>
+#include <thread>
+typedef struct FileName{
     std::string fileBaseName;
     std::string fileExt;
+    ~FileName(){
+        fileExt.clear(); fileBaseName.clear();
+    }
+    explicit FileName(const FileName& other): fileBaseName(other.fileBaseName), fileExt(other.fileExt){}
+    explicit FileName(FileName&& other) noexcept: fileBaseName(std::move(other.fileBaseName)), fileExt(std::move(other.fileExt)){
+    }
+    FileName& operator=(const FileName& other){
+        this->fileBaseName=other.fileBaseName;this->fileExt=other.fileExt;
+        return *this;
+    }
+    FileName& operator=(FileName&& other){
+        this->fileBaseName=std::move(other.fileBaseName);this->fileExt=std::move(other.fileExt);
+        return *this;
+    }
+    FileName(std::string&& base, std::string&& ext="jpg"): fileBaseName(base) ,fileExt(ext){}
+    FileName()=default;
 } FileName;
 class Image{
 public:
@@ -20,44 +40,37 @@ public:
     int y;
     int channels;
     FileName fileName;
-    Image(const char * filePath) {
-        FILE * f= fopen(filePath, "r");
-        auto* tmp = stbi_load_from_file(f, &x, &y, &channels, 3);
-        this->data=new unsigned char [x*y*channels];
-        std::memmove(this->data, tmp, x*y*channels);
-        free(tmp);
-        initFileName(filePath);
-        fclose(f);
+private :    static inline FileName getFileName(const char* path){
+        return getFileName(std::string (path));
     }
-    Image (char * filePath, int desired_channels){
+    static inline FileName getFileName(std::string path){
+        std::string fullName=path.substr(path.find_last_of('/')+1);
+        auto dot=fullName.find_last_of('.') + 1;
+        return {fullName.substr(0, fullName.length()- dot), fullName.substr(dot)};
+    }
+public:
+    Image (const char * filePath, int desired_channels): fileName(getFileName(filePath)){
         FILE * f= fopen(filePath, "r");
         auto* tmp = stbi_load_from_file(f, &x, &y, &channels, desired_channels);
         this->data=new unsigned char [x*y*channels];
-        std::memmove(this->data, tmp, x*y*channels);
+        for(int i=0; i<x*y*channels; i++) this->data[i]=tmp[i];
         free(tmp);
-        initFileName(filePath);
         fclose(f);
     }
-    Image(unsigned char * data, int x, int y, int ch, FileName fileName){
-        this->data=data;
-        this->x=x;
-        this->y=y;
-        this->channels=ch;
-        this->fileName=std::move(fileName);
+    Image(const char * filePath): Image(filePath, 3){}
+    Image(const Image& other): x(other.x) ,y(other.y), channels(other.channels), data(new unsigned char[other.size()]), fileName(other.fileName){
+    for(int i=0; i<other.size(); i++) this->data[i]=other.data[i];
+}
+    Image(Image&& other): x(other.x), y(other.y) , channels(other.channels), data(other.data), fileName(std::move(other.fileName)){}
+    Image(unsigned char * data, int x, int y, int ch, FileName&& fileName) :data(data), x(x), y(y), channels(ch), fileName(std::move(fileName)){}
+    void save(std::string writeDir);
+    void setFileName(std::string name){
+        this->fileName.fileBaseName=fileName.fileBaseName=name.substr(0, name.find('.'));
+        this->fileName.fileExt=name.substr(name.find('.'));
     }
-    void save(const char * writeDir){
-        std::string absolutePath=(std::string(writeDir)).append(fileName.fileBaseName).append(fileName.fileExt);
-        stbi_write_jpg(absolutePath.c_str(), x, y, channels, data, 100);
-    }
-    void setFileName(const char * name){
-        this->fileName.fileBaseName=name;
+    [[nodiscard]] constexpr inline unsigned int size() const{
+        return x*y*channels;
     }
 private:
-    void initFileName(const char * filePath){
-        std::string filePathStr(filePath);
-        std::string fileNameStr= filePathStr.substr(filePathStr.find_last_of("/")+1);
-        fileName.fileBaseName=fileNameStr.substr(0,fileNameStr.find('.'));
-        fileName.fileExt=fileNameStr.substr(fileNameStr.find('.'));
-    }
 };
 #endif //IMG_IMAGE_H

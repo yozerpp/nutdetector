@@ -3,206 +3,448 @@
 //
 
 #include <filesystem>
+#include <future>
 #include "../include/Model.h"
 #include "common.h"
-#include <boost/thread.hpp>
-
-namespace Model{
+#include "../include/Kernel.cuh"
+namespace Model {
     using json=nlohmann::json;
-    Normalization normalization= Normalization::MINMAX;
-    Preprocessing::Preprocessor * preprocessor=new Preprocessing::Preprocessor(2,256);
-    long double * trainOne(Image * sample){
-        preprocessor->polarize(sample, Preprocessing::GAUSSIAN);
-        unsigned int numObjects;
-        auto * detector=new Detector(sample);
-        Common::ObjectLabel * objects= detector->detect( &numObjects);
-        auto * featuresSum=Common::initializeArray((long double) 0, FEATURES_LENGTH);
-//        cv::Mat cv_image(sample->y, sample->x, CV_8UC3, sample->data);
-        long double ** featuresAll= Extractor::extractFeatures(objects, sample, numObjects);
-        for(unsigned int i=0; i<numObjects; i++) {
-            for (int j = 0; j < FEATURES_LENGTH; j++) {
-                featuresSum[j] += featuresAll[i][j];
-            }
-            delete[] featuresAll[i];
-//            cv::rectangle(cv_image, cv::Point(objects[i].x_start - 2, objects[i].y_start - 2), cv::Point(objects[i].x_end + 2, objects[i].y_end + 2), cv::Scalar_<unsigned char>(255, 0, 0), 5);
+    static inline int getRange(Image * img){
+        return (int)ceil(hypot(img->x-1,img->y-1) ) +1;
+    }
+    /** this is a wrapper function for kernel call to houghLine (see @p HoughLine for implementation details)
+     * @param img
+     * @return
+     */
+    static inline unsigned int* getHough(Image* img){
+        int range= getRange(img);
+        auto * hough= Kernel::executor<unsigned char,unsigned int,double,Kernel::edge::houghLine>(
+                img->data,nullptr,Kernel::edge::houghLine(),img->x,img->y,img->channels, range*360,0
+        );
+        auto * cpy=(unsigned int*) malloc(sizeof(unsigned int)*range*360);
+        memcpy(cpy,hough, sizeof(unsigned int)*range*360);
+        img->fileName.fileBaseName.append("_hough");
+        Image(Kernel::normalize<unsigned int, unsigned char>(cpy,range*360),360,range,1,FileName(img->fileName)).save(STEP_OUT_DIR);
+        free(cpy);
+        return hough;
+    }
+    /** extract hough matrix from image
+     * this function first acquires the raw hough matrix (see @p getHough ) then it filters top %1 percent of the hough matrix and converts matrix into a binary.
+     * @param img a binary image with white edges
+     * @return hough matrix
+     */
+    static inline unsigned char* houghLine(Image* img){
+#define numMeans 3
+        int range= getRange(img);
+        auto* hough=getHough(img);
+        unsigned int max=hough[0];
+        for(int i=0; i<range*360; i++){
+            if(hough[i] > max) max=hough[i];
         }
-        //TODO DISABLED AVERAGING
-        for(unsigned int i= 0; i<FEATURES_LENGTH; i++)
-            featuresSum[i]/=numObjects*1.0;
-        delete[] featuresAll;
+#define maxLines 30
+        auto * sorted=Kernel::sort(hough,range*360);
+        auto  threshold=sorted[ (int)(range*360 * (99/100.0))];
+        auto * filtered= new unsigned char [range* 360];
+        for(int i=0; i< range*360; i++) if(hough[i] > threshold) filtered[i]=255; else filtered[i]=0;
+//    auto * dist= Kernel::executor<unsigned int, unsigned int, double, Kernel::distribution<unsigned int>>(
+//            hough, nullptr, Kernel::distribution<unsigned int>(0, max), 360, range, 1, max, 0
+//    );
+//    Common::Mean* means= Common::Mean::getMeans(dist, max,numMeans);
+//    auto * filtered= Kernel::executor<unsigned int, unsigned char, double, Kernel::cluster<unsigned int, unsigned char>>(
+//            hough, nullptr, Kernel::cluster<unsigned int, unsigned char>(means, numMeans, 0, 255, (int)(numMeans)), 360, range, 1, range * 360, 0
+//    );
+#undef numMeans
+        if(SHOW_STEPS) {
+            img->fileName.fileBaseName.append("_filtered");
+            Image(filtered, 360, range, 1, FileName(img->fileName)).save(STEP_OUT_DIR);
+        }
+        return filtered;
+    }
+    /** this function attemps to map line given with polar coordinates to x-y plane but currently it doesn't appear to work correctly
+     *
+     * @param r
+     * @param t
+     * @param img
+     * @return
+     */
+   static inline cv::Point * getLinePoints(const int r,const  int t, const Image& img){
+        auto * ret= new cv::Point[2];
+        double houghAng= (t/360.0)*2*M_PI;
+        double initX= r * cos(houghAng);
+        double initY= r * sin(houghAng);
+        double lineAng;
+        switch (t /90) {
+            case 0:
+                lineAng=(t+ 90);
+                break;
+            case 1:
+            case 3:
+                lineAng=t-90;
+                break;
+            default: return nullptr;
+        }
+        lineAng =(lineAng/360) * 2*M_PI;
+        double stepX= cos(lineAng), stepY= sin(lineAng);
+        if((initX < 0 && stepX <0) || (initY <0 && stepY <0)) {
+            return nullptr;
+        }
+        while(initX <0 || initY <0 ){
+            if(initX >= img.x || initY >= img.y) return nullptr;
+            initX+= stepX, initY +=stepY;
+        }
+        double xStart=initX, yStart=initY;
+        while(xStart >= 0 && yStart >= 0 && xStart < img.x && yStart < img.x) xStart += stepX, yStart-= stepY;
+        xStart -= stepX,yStart += stepY;
+        double xEnd=initX, yEnd=initY;
+        while (xEnd < img.x && yEnd < img.y && xEnd >=0 && yEnd >=0) xEnd -= stepX, yEnd+= stepY;
+        xEnd += stepX, yEnd-= stepY;
+        ret[0].x= floor(xStart), ret[0].y= floor(yStart), ret[1].x= ceil(xEnd), ret[1].y= ceil(yEnd);
+        if (hypot(abs(xEnd - xStart), abs(yEnd - yStart)) < sqrt(img.x*img.y)) return nullptr;
+        return ret;
+    }
+    /** detect lines
+     * this function first performs and edge detection on the image (see @p Preprocessing::edge ), then it extracts the hough matrix from the image (see @p houghLine ), then it draws every line in the hough matrix (h[rho][thta]) by first converting polar coordinates to x-y coordinates and extending the line to span the whole image (see @p getLinePoints )
+     * @param img
+     * @return image with lines drawn
+     */
+    Image* Model::detectLines(Image* img){
+        Image& cpy=*new Image(*img);
+        img=Preprocessing::edge(img);
+        int range= getRange(img);
+        auto * hough=houghLine(img);
+        for(int r=0; r < range; r++){
+            for(int t=0; t < 360; t++){
+                if(hough[r * 360 + t] == 255) {
+                    auto * points= getLinePoints(r,t,*img);
+                    if(points== nullptr) continue;
+                    cv::line(cv::Mat(img->y, img->x, CV_8UC3, cpy.data),points[0],points[1],{255,0,0},1);
+                }
+            }
+        }
+        cpy.channels=3;
+        if (SHOW_STEPS){
+            cpy.fileName.fileBaseName.append("_lines");
+            cpy.save(Common::OUTPUT_DIR);
+        }
+        img->fileName=cpy.fileName;
+        img->fileName.fileBaseName.append("_edge");
+        return& cpy;
+    }
+    //TODO IMPLEMENT INCREMENTAL COVARIANCE CALCULATION
+    //TODO NORMALIZATION ACROSS CLASSES NEEDED?
+    /** extract features of one image containing only one class of images and return the results.
+     * this function first performs a binary conversion on the image (see @p Preprocessing::binary ), then it detects the objects in the image (see @p Detector) and draws the bounding box encapsulating the image with opencv::rectangle function, then it extracts the features from the detected objects (see @p Extractor).
+     * @param sample
+     * @return matrix containing features of the objects in the @p sample
+     */
+    Matrix<dataType>& Model::trainOne(Image * sample){
+        auto * original =new unsigned char[ sample->size()];
+        memcpy(original,sample->data, sizeof(unsigned char)*sample->size());
+        sample= Preprocessing::binary(sample);
+        unsigned int count;
+        Common::ObjectPosition* objects= Detector(sample).detect(&count);
+        for(unsigned int i=0; i<count; i++) {
+            cv::rectangle(cv::Mat(sample->y, sample->x, CV_8UC3, original), cv::Point(objects[i].x_start - 2, objects[i].y_start - 2), cv::Point(objects[i].x_end + 2, objects[i].y_end + 2), cv::Scalar_<unsigned char>(255, 0, 0), 5);
+        }
+        auto * ret= new Matrix<dataType>(Extractor::extractFeatures(objects, sample, count));
+
+        delete[]sample->data;
+        sample->data=original;
         free(objects);
-        delete detector;
-        return featuresSum;
-//        out->insert_or_assign(sample->fileName.fileBaseName.c_str(), featuresSum);
+        return *ret;
     }
-    void standardize(std::map<std::string,long double *>& results, json * data){
-        auto * means=Common::initializeArray((long double )0.0, FEATURES_LENGTH);
-        for(int i=0; i<FEATURES_LENGTH; i++){
-            for(auto& pair: results) {
-                means[i] += pair.second[i];
+    /** Perform principal component analysis and dimensionality reduction to input data
+     * this function first acquires the projection matrix from the input matrix containing all the input data (see @p Matrix::projection ), then it multiplies (after centering) every matrix in the @p results by the projection matrix
+     * @param total matrix containing all the training data
+     * @param results map object containing the features grouped by classes
+     * @param threshold threshold for eigenvalue filtering
+     * @param standardize whether or not standardization will be performed
+     * @return projection matrix
+     */
+    Matrix<dataType> Model::Model::doPCA(Matrix<dataType> &total, std::map<std::string, Matrix<dataType>> &results,
+                                           double threshold,
+                                           bool standardize) {
+        auto projection= Matrix<dataType>::projection(total, threshold, standardize);
+        for(auto& pair:results) {
+            auto centered=pair.second.center();
+            if(standardize) {
+                auto stddevv = pair.second.stddev(true);
+                centered /= stddevv;
             }
-            means[i]/=results.size();
-            data->operator[]("metadata")["mean"].push_back(means[i]);
+            auto projected = centered * projection;
+            auto *dtCpy = new dataType[projected.x * projected.y];
+            for (int i = 0; i < projected.x * projected.y; i++) dtCpy[i] = projected[i];
+            delete[] pair.second.data;
+            pair.second.x = projected.x;
+            pair.second.data = dtCpy;
         }
-        auto * std_dev=Common::initializeArray((long double)0, FEATURES_LENGTH);
-        for(int i=0; i < FEATURES_LENGTH; i++){
-            for(auto& pair: results) {
-                std_dev[i]+=pow(pair.second[i]-means[i],2);
+        return projection;
+    }
+    template <int n>
+        DataManager::Iterator<n>::Iterator(json& dat, std::string*&& dataLocations):  current(dat.begin()), endIt(dat.end()){
+            for (int i=0; i<n; i++)
+                labels[i]=std::move(dataLocations[i]);
+        }
+
+    template <int n>
+        typename DataManager::Iterator<n>::labelMatPair DataManager::Iterator<n>::operator*(){
+            labelMatPair ret;
+            int k=0;
+            for(auto& label:labels){
+                auto tmp= current->at(label).template get<std::vector<std::vector<dataType>>>();
+                int x=tmp[0].size();
+                int y=tmp.size();
+                ret.mats[k]=Matrix<dataType>(x, y);
+                for(int i=0; i<y; i++) {
+                    for (int j = 0; j < x; j++)
+                        ret.mats[k].operator[](i * x + j) = tmp[i][j];
+                }
+                k++;
             }
-            std_dev[i]= sqrt(std_dev[i]/results.size());
-            data->operator[]("metadata")["deviation"].push_back(std_dev[i]);
+            ret.label=current.key();
+            return ret;
         }
-        for(auto& pair:results){
-            for(int i=0; i<FEATURES_LENGTH; i++)
-                pair.second[i]=(pair.second[i]-means[i])/(std_dev[i]);
+        /** MeanDistanceCalculator
+         * this class labels the image by measuring the euclidiean distance between the features of the input object and means of the classes in the training data.
+         */
+        struct MeanDistanceCalculater : public DataManager{
+        Matrix<MinMax<dataType>> minmax = Matrix<MinMax<dataType>>(7,1);
+        static inline Matrix<MinMax<dataType>> storeMean(const Matrix<dataType>** all, const int len){
+            Matrix<dataType> means(all[0]->x,0);
+            for(int i=0; i< len; i++){
+                means.merge(all[i]->mean());
+            }
+            auto minmax=means.minMax(Matrix<dataType>::axis::Y);
+            auto mm=Matrix<dataType>::mins(minmax);
+            DataManager::store("min", data["metadata"], mm);
+            auto mam=Matrix<dataType>::maxes(minmax);
+            DataManager::store("max", data["metadata"], mam);
+            return minmax;
         }
-        delete[] means;
-        delete[] std_dev;
-    }
-    void minmax(std::map<std::string, long double *>& results,json * data){
-        auto * featuresMax=Common::initializeArray((long double ) 0.0, FEATURES_LENGTH);
-        auto * featuresMin=Common::initializeArray((long double) DBL_MAX, FEATURES_LENGTH);
-        for(auto& pair:results){
-            for (int j=0;j<FEATURES_LENGTH; j++){
-                 long double f=pair.second[j];
-                featuresMax[j]=featuresMax[j]<f?f:featuresMax[j];
-                featuresMin[j]=featuresMin[j]>f?f:featuresMin[j];
+        inline void storeMetadata(const Matrix<dataType>** all, const int len)override{
+            DataManager::storeMetadata(all, len);
+            minmax= storeMean(all,len);
+        }
+        static inline Matrix<dataType> normalizeMinMax(const Matrix<dataType>& that,const Matrix<MinMax<dataType>>& minmax){
+            auto mean =that.mean();
+            auto mins=Matrix<dataType>::mins(minmax);
+            auto maxes=Matrix<dataType>::maxes(minmax);
+            return (mean - maxes)/(maxes- mins);
+        }
+        inline void store(std::string label,const Matrix<dataType>& that) override{
+            auto normalized= normalizeMinMax(that,minmax);
+            DataManager::store("meanNormalized", data["classes"][label], normalized);
+        }
+        inline DistanceMethod type()const override{
+            return Mean;
+        }
+        MeanDistanceCalculater(): DataManager(){}
+        inline std::string findClosest(const Matrix<dataType> &that)override {
+            dataType  closestDist=FLT_MAX;
+            auto min=DataManager::retrieveMetadata<Matrix<dataType>>("min");
+            auto max=DataManager::retrieveMetadata<Matrix<dataType>>("max");
+            minmax=Matrix<MinMax<dataType>>(min.x,1);
+            for(int i=0; i<min.x; i++) minmax[i]=MinMax<dataType>{min[i],max[i]};
+            auto normalized= normalizeMinMax(that,minmax);
+            std::string label;
+            for(auto pair:Iterator<1> (data["classes"], new std::string[1]{"meanNormalized"})){
+                auto dist=Vector<dataType>(normalized - pair.mats[0]).length();
+                if(dist< closestDist){
+                    label=pair.label;
+                    closestDist=dist;
+                }
+            }
+            return label;
+        }
+    };
+    /** CovarianceDistanceCalculator
+     * this class labels the image by measuring the mahalanobis distance between the features of the input object and means of the classes in the training data.
+     */
+    struct CovarianceDistanceCalculater : public DataManager{
+        CovarianceDistanceCalculater(): DataManager(){}
+        inline void storeMetadata(const Matrix<dataType>** all, const int len)override{
+            DataManager::storeMetadata(all, len);
+        }
+        inline void store(std::string label, const Matrix<dataType>& that) override{
+            auto mean= that.mean();
+            auto covariance= that.covariance(true);
+            DataManager::store("mean", data["classes"][label], mean);
+            DataManager::store("covariance", data["classes"][label], covariance);
+        }
+        inline DistanceMethod type()const override{
+            return Covariance;
+        }
+
+        inline std::string findClosest(const Matrix<dataType> &that)override {
+            dataType  closestDist=FLT_MAX;
+            std::string label;
+            auto min=DataManager::retrieveMetadata<Matrix<dataType>>("min");
+            auto max=DataManager::retrieveMetadata<Matrix<dataType>>("max");
+            for(auto pair:Iterator<2> (data["classes"], new std::string[2]{"mean", "covariance"})){ // TODO DO I NEED TO DELETE PAIR AFTER?
+                auto& mean=pair.mats[0];
+                auto& cov= pair.mats[1];
+                auto dist=Matrix<dataType>::mahalanobis(that, mean ,cov);
+                if(dist<closestDist) {
+                    label=pair.label;
+                    closestDist=dist;
+                }
+            }
+            return label;
+        }
+    };
+    /** DumpDistance calculator
+     * this class is a performs labeling by finding @p n number of closest objects from the training data and assigning the _detect which is prominent among the found objects.
+     */
+    struct DumpStorageProvider: public DataManager{
+    public:
+        int count;
+        DumpStorageProvider(): DataManager(), count(3){}
+        inline void store(std::string label,const Matrix<dataType>& that)override{
+            DataManager::store("raw", data["classes"][label], that);
+        }
+        inline DistanceMethod type()const override{
+            return Dump;
+        }
+        inline void storeMetadata(const Matrix<dataType>** all,const int len)override{
+            DataManager::storeMetadata(all, len);
+        }
+        inline std::string findClosest(const Matrix<dataType> &that)override{
+            std::multimap<std::string, nullptr_t> counts{};
+            for(int i=0;i < count; i++){
+                std::string closest;
+                dataType closestVal=FLT_MAX;
+                for(auto pair: Iterator<1>(data["classes"], new std::string[1]{"raw"})){
+                    auto tmp= Vector(that - pair.mats[0]);
+                    auto dist= (dynamic_cast<Vector<dataType>*>(&tmp))->length();
+                    if(dist < closestVal) closest = pair.label;
+                }
+                counts.insert(std::pair(closest,nullptr));
+            }
+            std::string closest;
+            int matchCount=0;
+            for(auto it=counts.begin(); it!=counts.end(); ++it){
+                int c=counts.count(it->first);
+                if(matchCount < c) {
+                    matchCount=c;
+                    closest=it->first;
+                }
+            }
+            return closest;
+        }
+    };
+    /** constructor
+     *
+     * @param PCA whether PCA will be performed or not (it currently gives incorrect results)
+     * @param closestTest if Dump distance calculation (see @p DumpDistanceCalculator ) is chosen as a distance calculation method, program will find @p closestTest number of objects and assign the count of the whichever _detect is highest.
+     * @param s number of distance calculation methods
+     * @param storageMethods distance calculation methods
+     * @param standardize whether or not standardization should be performed on during the principal component analysis
+     */
+    Model::Model(bool PCA, int closestTest, int s, const DistanceMethod* storageMethods, bool standardize): PCA(PCA), storageMethodsCount(s), standardize(standardize){
+        storageProviders=new DataManager*[storageMethodsCount];
+        for(int i=0; i<s; i++){
+            switch (storageMethods[i]) {
+                case DistanceMethod::Covariance:
+                    storageProviders[i]=(DataManager*) new CovarianceDistanceCalculater;
+                    break;
+                case DistanceMethod::Mean:
+                    storageProviders[i]=(DataManager*) new MeanDistanceCalculater();
+                    break;
+                case DistanceMethod::Dump:
+                    auto* ss= new DumpStorageProvider();
+                    ss->count= closestTest;
+                    storageProviders[i]=(DataManager*)ss;
+                    break;
             }
         }
-        for(auto &pair:results){
-            for(int j=0; j<FEATURES_LENGTH; j++)
-                pair.second[j]= (pair.second[j]-featuresMin[j])/(featuresMax[j]-featuresMin[j]);
-        }
-        for(int i=0; i<FEATURES_LENGTH; i++){
-            data->operator[]("metadata")["min"].push_back(featuresMin[i]);
-            data->operator[]("metadata")["max"].push_back(featuresMax[i]);
-        }
-        delete[] featuresMin;
-        delete[] featuresMax;
     }
-    void normalize(std::map<std::string,long double *>& results, json* data){
-        switch(normalization){
-            case STANDARD:
-                standardize(results, data);
-                break;
-            case MINMAX:
-                minmax(results,data);
-                break;
-            case NONE:
-                break;
-        }
-    }
-    void train(const char * trainDir){
-        json data;
-        std:: map<std::string,long double *> results{};
+    /** trains with the dataset present in the directory specified.
+     * this function performs following actions to every individual image in the input directory:
+     * binary conversion (see @p Preprocessing::binary)
+     * object detection (see @p Detector::detect)
+     * feature extraction (see @p Extractor)
+     * (if specified) then it joins every data in the dataset together(including different labels) and performs principal component analysis on them.
+     * then it stores different variations of the data for different distance calculators (see @p Model::MeanDistanceCalculator, Model::CovarianceDistanceCalculator ) for example it stores mean if mean is specified as a distance calculation methods in the program arguments. It also stores the covariance if the covariance is chosen as a distance calculation method.
+     * @param trainDir
+     * @param threshold threshold to be used for dimension reduction during principal component analysis
+     */
+    void Model::train(const char * trainDir, double threshold){
+        std::map<std::string, Matrix<dataType>>results{};
+        Matrix<dataType> total(FEATURES_LENGTH, 0, nullptr);
         int idx=1;
         for(const auto &file: std::filesystem::directory_iterator(trainDir)){
-            auto * image = new Image(file.path().c_str());
-            printf("\n---%d. Learning: %s---\n", idx++, image->fileName.fileBaseName.c_str());
-            auto * res=trainOne(image);
-           results.insert_or_assign(image->fileName.fileBaseName, res);
-           image->save(OUTPUT_DIR);
-            delete[] image->data;
-            delete image;
+            Image image(file.path().c_str());
+            std::string name=image.fileName.fileBaseName;
+            printf("\n---%d. Learning: %s---\n", idx++, image.fileName.fileBaseName.c_str());
+            auto res=trainOne(&image);
+            results.insert_or_assign(name,res);
+            total.merge(res,false);
+            image.fileName.fileBaseName=name;
+            image.fileName.fileBaseName.append("_trained");
+            image.save(Common::OUTPUT_DIR);
         }
-        normalize(results, &data);
+        if(PCA){
+            auto projection= doPCA(total, results, threshold, standardize);
+            DataManager::storeMetadata("projection", projection);
+        }
+        Matrix<dataType>*ar [results.size()];
+        int q=0;
+        for (auto& pair:results){
+            ar[q++]=&pair.second;
+        }
         for(auto& pair:results){
-            std::cout<< pair.first << std::endl;
-            for(int j=0;j<FEATURES_LENGTH; j++){
-                std::cout << std::setprecision(15) << std::scientific << pair.second[j] << std::endl;
-                data["labels"][pair.first].push_back(pair.second[j]);
-            }
-            delete[] pair.second;
-        }
-        std::ofstream out(MODEL_DATA_DIR.append(MODEL_DATA), std::ios::trunc);
-        out << data.dump(2,' ');
-        out.close();
-        data.clear();
-    }
-    std::string findClosest( long double * features, nlohmann::json& data){
-        long double closestValue=DBL_MAX;
-        std::string label;
-        json labels=data["labels"];
-        for(auto i=labels.begin(); i!=labels.end(); ++i){
-            json f=i.value();
-            long double sum=0.0;
-            unsigned int idx=0;
-            for(auto j=f.begin(); j!=f.end(); ++j, idx++){
-                double v=j->get<double>();
-                if(std::isnan(features[idx])) printf("NaN: %Lf\n",features[idx]);
-                long double val=pow(features[idx] - v, 2);
-                sum+=val;
-            }
-            sum= sqrt(sum);
-            if(sum<closestValue){
-                closestValue=sum;
-                label=i.key();
+            for(int i=0; i < storageMethodsCount; i++){
+                storageProviders[i]->storeMetadata((const Matrix<dataType>**)(ar), results.size());
+                storageProviders[i]->store(pair.first,pair.second);
             }
         }
-        return label;
+        DataManager::flush();
     }
-    void minmax(long double * features, json& data){
-        json min=data["metadata"]["min"];
-        json max=data["metadata"]["max"];
-        unsigned int k=0;
-        for(auto i=min.begin(), j=max.begin(); i!=min.end()&& j!=max.end(); ++i, ++j, k++){
-            double m=i->get<double>();
-            double ma=j->get<double>();
-            features[k]=(features[k]- m)/(ma-m);
-        }
-    }
-    void standardize(long double * features, json& data){
-        json means=data["metadata"]["means"];
-        json deviation=data["metadata"]["deviation"];
-        unsigned int k=0;
-        for(auto i=means.begin(), j=deviation.begin(); i!=means.end()&&j!=deviation.end(); ++i, ++j, k++){
-            long double mean=i->get<long double>();
-            long double std_dev=j->get<long double>();
-            features[k]=(features[k]-mean)/std_dev;
-        }
-    }
-    void normalize(long double * features, json& data){
-        switch (normalization) {
-            case MINMAX:
-                minmax(features, data);
-                break;
-            case STANDARD:
-                standardize(features, data);
-                break;
-            case NONE:
-                break;
-        }
-    }
-    Image * infer(Image * image){
-        std::ifstream in1(MODEL_DATA_DIR.append(MODEL_DATA));
-        nlohmann::json data=nlohmann::json::parse(in1);
+    /** performs labeling on input image
+     * this function first converts the input image to binary (see @p Preprocessing::binary ) then it gathers positions of the objects (see @p Detector ),
+     * then it extracts the features from the detected objects (see @p Extractor), then it (if specified) performs principal component analysis on the results, then it labels the object with various methods (see @p Model::MeanDistanceCalculator, Model::CovarianceDistanceCalculator ), and writes the _detect text onto the image using @p opencv::rectangle
+     * @param image
+     * @return
+     */
+    Image ** Model::infer(Image * image)const{
         printf("%s\n", image->fileName.fileBaseName.c_str());
-        preprocessor->polarize(image, Preprocessing::GAUSSIAN);
+        std::map<std::string, std::vector<std::string>> providerResults{};
+        auto ** ret=new Image*[storageMethodsCount];
+        for(int i=0; i < storageMethodsCount; i++) providerResults.insert_or_assign(storageStrings.at(storageProviders[i]->type()), std::vector<std::string>());
+        auto name=image->fileName.fileBaseName;
+        auto * original = new unsigned char[image->x*image->y* image->channels];
+        for(int i=0; i<image->size(); i++) original[i]=image->data[i];
+        Preprocessing::binary(image);
         unsigned int numObjects;
-        auto* detector=new Detector(image);
-        Common::ObjectLabel * objects= detector->detect( &numObjects);
-        printf("--Started extracting--\n");
-        long double ** featuresAll= Extractor::extractFeatures(objects, image, numObjects);
-        auto * labels=new std::string[numObjects];
-        for(unsigned int i=0; i<numObjects; i++){
-            normalize(featuresAll[i], data);
-            labels[i]= findClosest(featuresAll[i],data);
-            delete[] featuresAll[i];
-            //                        drawRect(objects[i], image,2);
+        auto* objects= Detector(image).detect(&numObjects);
+        Matrix<dataType> all= Extractor::extractFeatures(objects, image, numObjects);
+        if(PCA) {
+            auto projectionMat = DataManager::retrieveMetadata<Matrix<dataType>>("projection");
+            Matrix<dataType> tmp = all* projectionMat;
+            all=std::move(tmp);
         }
-        delete[] featuresAll;
-        cv::Mat cv_image(image->y, image->x, CV_8UC3, image->data);
-        for(unsigned int i=0; i<numObjects; i++){
-            cv::rectangle(cv_image, cv::Point(objects[i].x_start - 2, objects[i].y_start - 2), cv::Point(objects[i].x_end + 2, objects[i].y_end + 2), cv::Scalar_<unsigned char>(255, 0, 0), 5);
-            cv::putText(cv_image, cv::String(labels[i]), cv::Point(objects[i].x_start + 15, objects[i].y_end + -10), cv::FONT_HERSHEY_DUPLEX, 2, cv::Scalar_<unsigned char>(255, 0, 0));
+        cv::Mat cv_images[storageMethodsCount];
+        for(int i=0; i < storageMethodsCount; i++) {
+            auto * cp= new unsigned char[image->x*image->y*image->channels];
+            for(int j=0; j< image->x*image->y*image->channels; j++) cp[j]=original[j];
+            cv_images[i]=cv::Mat(image->y,image->x, CV_8UC3, cp);
         }
-        image->data=cv_image.data;
+        for(int j=0; j < storageMethodsCount; j++) {
+            for(int i=0; i<numObjects; i++){
+                std::string label=storageProviders[j]->findClosest(all.row(i).detach());
+                cv::rectangle(cv_images[j], cv::Point(objects[i].x_start - 2, objects[i].y_start - 2),
+                              cv::Point(objects[i].x_end + 2, objects[i].y_end + 2),
+                              cv::Scalar_<unsigned char>(255, 0, 0), 5);
+                cv::putText(cv_images[j], cv::String(label), cv::Point(objects[i].x_start + 15, objects[i].y_end + -10),
+                            cv::FONT_HERSHEY_DUPLEX, 2, cv::Scalar_<unsigned char>(255, 0, 0));
+                }
+            auto * cpy=new unsigned char[cv_images[j].cols*cv_images[j].rows*cv_images[j].channels()];
+            for(int k=0; k<cv_images[j].cols*cv_images[j].rows*cv_images[j].channels(); k++) cpy[k] =cv_images[j].data[k];
+            ret[j]=new Image(cpy,cv_images[j].cols,cv_images[j].rows, 3, FileName((name + "_" + storageStrings.at(storageProviders[j]->type())),std::string(image->fileName.fileExt)));
+        }
         printf("\n");
-        delete[] labels;
+        delete[] original;
         free(objects);
-        delete detector;
-        in1.close();
-        data.clear();
-        return image;
+        return ret;
     }
 }

@@ -67,7 +67,7 @@ USAGE:
    You can configure it with these global variables:
       int stbi_write_tga_with_rle;             // defaults to true; set to 0 to disable RLE
       int stbi_write_png_compression_level;    // defaults to 8; set to higher for more compression
-      int stbi_write_force_png_filter;         // defaults to -1; set to 0..5 to force a filter mode
+      int stbi_write_force_png_filter;         // defaults to -1; set to 0..5 to force a filter checkIfHighest
 
 
    You can define STBI_WRITE_NO_STDIO to disable the file variant of these
@@ -94,7 +94,7 @@ USAGE:
    by supplying the stride between the beginning of adjacent rows. The other
    formats do not. (Thus you cannot save a native-format BMP through the BMP
    writer, both because it is in BGR order and because it may have padding
-   at the end of the line.)
+   row the end of the line.)
 
    PNG allows you to set the deflate compression level by setting the global
    variable 'stbi_write_png_compression_level' (it defaults to 8).
@@ -301,7 +301,7 @@ STBIWDEF int stbiw_convert_wchar_to_utf8(char *buffer, size_t bufferlen, const w
 }
 #endif
 
-static FILE *stbiw__fopen(char const *filename, char const *mode)
+static FILE *stbiw__fopen(char const *filename, char const *checkIfHighest)
 {
    FILE *f;
 #if defined(_WIN32) && defined(STBIW_WINDOWS_UTF8)
@@ -310,7 +310,7 @@ static FILE *stbiw__fopen(char const *filename, char const *mode)
    if (0 == MultiByteToWideChar(65001 /* UTF8 */, 0, filename, -1, wFilename, sizeof(wFilename)/sizeof(*wFilename)))
       return 0;
 
-   if (0 == MultiByteToWideChar(65001 /* UTF8 */, 0, mode, -1, wMode, sizeof(wMode)/sizeof(*wMode)))
+   if (0 == MultiByteToWideChar(65001 /* UTF8 */, 0, checkIfHighest, -1, wMode, sizeof(wMode)/sizeof(*wMode)))
       return 0;
 
 #if defined(_MSC_VER) && _MSC_VER >= 1400
@@ -321,10 +321,10 @@ static FILE *stbiw__fopen(char const *filename, char const *mode)
 #endif
 
 #elif defined(_MSC_VER) && _MSC_VER >= 1400
-   if (0 != fopen_s(&f, filename, mode))
+   if (0 != fopen_s(&f, filename, checkIfHighest))
       f=0;
 #else
-   f = fopen(filename, mode);
+   f = fopen(filename, checkIfHighest);
 #endif
    return f;
 }
@@ -500,7 +500,7 @@ static int stbi_write_bmp_core(stbi__write_context *s, int x, int y, int comp, c
                40, x,y, 1,24, 0,0,0,0,0,0);             // bitmap header
    } else {
       // RGBA bitmaps need a v4 header
-      // use BI_BITFIELDS mode with 32bpp and alpha mask
+      // use BI_BITFIELDS checkIfHighest with 32bpp and alpha mask
       // (straight BI_RGB with alpha mask doesn't work in most readers)
       return stbiw__outfile(s,-1,-1,x,y,comp,1,(void *)data,1,0,
          "11 4 22 4" "4 44 22 444444 4444 4 444 444 444 444",
@@ -558,31 +558,31 @@ static int stbi_write_tga_core(stbi__write_context *s, int x, int y, int comp, v
       }
       for (; j != jend; j += jdir) {
          unsigned char *row = (unsigned char *) data + j * x * comp;
-         int len;
+         int numMeans;
 
-         for (i = 0; i < x; i += len) {
+         for (i = 0; i < x; i += numMeans) {
             unsigned char *begin = row + i * comp;
             int diff = 1;
-            len = 1;
+            numMeans = 1;
 
             if (i < x - 1) {
-               ++len;
+               ++numMeans;
                diff = memcmp(begin, row + (i + 1) * comp, comp);
                if (diff) {
                   const unsigned char *prev = begin;
-                  for (k = i + 2; k < x && len < 128; ++k) {
+                  for (k = i + 2; k < x && numMeans < 128; ++k) {
                      if (memcmp(prev, row + k * comp, comp)) {
                         prev += comp;
-                        ++len;
+                        ++numMeans;
                      } else {
-                        --len;
+                        --numMeans;
                         break;
                      }
                   }
                } else {
-                  for (k = i + 2; k < x && len < 128; ++k) {
+                  for (k = i + 2; k < x && numMeans < 128; ++k) {
                      if (!memcmp(begin, row + k * comp, comp)) {
-                        ++len;
+                        ++numMeans;
                      } else {
                         break;
                      }
@@ -591,13 +591,13 @@ static int stbi_write_tga_core(stbi__write_context *s, int x, int y, int comp, v
             }
 
             if (diff) {
-               unsigned char header = STBIW_UCHAR(len - 1);
+               unsigned char header = STBIW_UCHAR(numMeans - 1);
                stbiw__write1(s, header);
-               for (k = 0; k < len; ++k) {
+               for (k = 0; k < numMeans; ++k) {
                   stbiw__write_pixel(s, -1, comp, has_alpha, 0, begin + k * comp);
                }
             } else {
-               unsigned char header = STBIW_UCHAR(len - 129);
+               unsigned char header = STBIW_UCHAR(numMeans - 129);
                stbiw__write1(s, header);
                stbiw__write_pixel(s, -1, comp, has_alpha, 0, begin);
             }
@@ -735,10 +735,10 @@ static void stbiw__write_hdr_scanline(stbi__write_context *s, int width, int nco
                r = width;
             // dump up to first run
             while (x < r) {
-               int len = r-x;
-               if (len > 128) len = 128;
-               stbiw__write_dump_data(s, len, &comp[x]);
-               x += len;
+               int numMeans = r-x;
+               if (numMeans > 128) numMeans = 128;
+               stbiw__write_dump_data(s, numMeans, &comp[x]);
+               x += numMeans;
             }
             // if there's a run, output it
             if (r+2 < width) { // same test as what we break out of in search loop, so only true if we break'd
@@ -747,10 +747,10 @@ static void stbiw__write_hdr_scanline(stbi__write_context *s, int width, int nco
                   ++r;
                // output run up to r
                while (x < r) {
-                  int len = r-x;
-                  if (len > 127) len = 127;
-                  stbiw__write_run_data(s, len, comp[x]);
-                  x += len;
+                  int numMeans = r-x;
+                  if (numMeans > 127) numMeans = 127;
+                  stbiw__write_run_data(s, numMeans, comp[x]);
+                  x += numMeans;
                }
             }
          }
@@ -765,17 +765,17 @@ static int stbi_write_hdr_core(stbi__write_context *s, int x, int y, int comp, f
    else {
       // Each component is stored separately. Allocate scratch space for full output scanline.
       unsigned char *scratch = (unsigned char *) STBIW_MALLOC(x*4);
-      int i, len;
+      int i, numMeans;
       char buffer[128];
       char header[] = "#?RADIANCE\n# Written by stb_image_write.h\nFORMAT=32-bit_rle_rgbe\n";
       s->func(s->context, header, sizeof(header)-1);
 
 #ifdef __STDC_LIB_EXT1__
-      len = sprintf_s(buffer, sizeof(buffer), "EXPOSURE=          1.0000000000000\n\n-Y %d +X %d\n", y, x);
+      numMeans = sprintf_s(buffer, sizeof(buffer), "EXPOSURE=          1.0000000000000\n\n-Y %d +X %d\n", y, x);
 #else
-      len = sprintf(buffer, "EXPOSURE=          1.0000000000000\n\n-Y %d +X %d\n", y, x);
+      numMeans = sprintf(buffer, "EXPOSURE=          1.0000000000000\n\n-Y %d +X %d\n", y, x);
 #endif
-      s->func(s->context, buffer, len);
+      s->func(s->context, buffer, numMeans);
 
       for(i=0; i < y; i++)
          stbiw__write_hdr_scanline(s, x, comp, scratch, data + comp*x*(stbi__flip_vertically_on_write ? y-1-i : i));
@@ -939,7 +939,7 @@ STBIWDEF unsigned char * stbi_zlib_compress(unsigned char *data, int data_len, i
       stbiw__sbpush(hash_table[h],data+i);
 
       if (bestloc) {
-         // "lazy matching" - check match at *next* byte, and if it's better, do cur byte as literal
+         // "lazy matching" - check match row *next* byte, and if it's better, do cur byte as literal
          h = stbiw__zhash(data+i+1)&(stbiw__ZHASH-1);
          hlist = hash_table[h];
          n = stbiw__sbcount(hlist);
@@ -981,7 +981,7 @@ STBIWDEF unsigned char * stbi_zlib_compress(unsigned char *data, int data_len, i
       (void) stbiw__sbfree(hash_table[i]);
    STBIW_FREE(hash_table);
 
-   // store uncompressed instead if compression was worse
+   // storeMetadata uncompressed instead if compression was worse
    if (stbiw__sbn(out) > data_len + 2 + ((data_len+32766)/32767)*5) {
       stbiw__sbn(out) = 2;  // truncate to DEFLATE 32K window and FLEVEL = 1
       for (j = 0; j < data_len;) {
@@ -1021,10 +1021,10 @@ STBIWDEF unsigned char * stbi_zlib_compress(unsigned char *data, int data_len, i
 #endif // STBIW_ZLIB_COMPRESS
 }
 
-static unsigned int stbiw__crc32(unsigned char *buffer, int len)
+static unsigned int stbiw__crc32(unsigned char *buffer, int numMeans)
 {
 #ifdef STBIW_CRC32
-    return STBIW_CRC32(buffer, len);
+    return STBIW_CRC32(buffer, numMeans);
 #else
    static unsigned int crc_table[256] =
    {
@@ -1064,7 +1064,7 @@ static unsigned int stbiw__crc32(unsigned char *buffer, int len)
 
    unsigned int crc = ~0u;
    int i;
-   for (i=0; i < len; ++i)
+   for (i=0; i < numMeans; ++i)
       crc = (crc >> 8) ^ crc_table[buffer[i] ^ (crc & 0xff)];
    return ~crc;
 #endif
@@ -1074,9 +1074,9 @@ static unsigned int stbiw__crc32(unsigned char *buffer, int len)
 #define stbiw__wp32(data,v) stbiw__wpng4(data, (v)>>24,(v)>>16,(v)>>8,(v));
 #define stbiw__wptag(data,s) stbiw__wpng4(data, s[0],s[1],s[2],s[3])
 
-static void stbiw__wpcrc(unsigned char **data, int len)
+static void stbiw__wpcrc(unsigned char **data, int numMeans)
 {
-   unsigned int crc = stbiw__crc32(*data - len - 4, len+4);
+   unsigned int crc = stbiw__crc32(*data - numMeans - 4, numMeans+4);
    stbiw__wp32(*data, crc);
 }
 
@@ -1215,13 +1215,13 @@ STBIWDEF unsigned char *stbi_write_png_to_mem(const unsigned char *pixels, int s
 STBIWDEF int stbi_write_png(char const *filename, int x, int y, int comp, const void *data, int stride_bytes)
 {
    FILE *f;
-   int len;
-   unsigned char *png = stbi_write_png_to_mem((const unsigned char *) data, stride_bytes, x, y, comp, &len);
+   int numMeans;
+   unsigned char *png = stbi_write_png_to_mem((const unsigned char *) data, stride_bytes, x, y, comp, &numMeans);
    if (png == NULL) return 0;
 
    f = stbiw__fopen(filename, "wb");
    if (!f) { STBIW_FREE(png); return 0; }
-   fwrite(png, 1, len, f);
+   fwrite(png, 1, numMeans, f);
    fclose(f);
    STBIW_FREE(png);
    return 1;
@@ -1230,10 +1230,10 @@ STBIWDEF int stbi_write_png(char const *filename, int x, int y, int comp, const 
 
 STBIWDEF int stbi_write_png_to_func(stbi_write_func *func, void *context, int x, int y, int comp, const void *data, int stride_bytes)
 {
-   int len;
-   unsigned char *png = stbi_write_png_to_mem((const unsigned char *) data, stride_bytes, x, y, comp, &len);
+   int numMeans;
+   unsigned char *png = stbi_write_png_to_mem((const unsigned char *) data, stride_bytes, x, y, comp, &numMeans);
    if (png == NULL) return 0;
-   func(context, png, len);
+   func(context, png, numMeans);
    STBIW_FREE(png);
    return 1;
 }
@@ -1706,11 +1706,11 @@ SOFTWARE.
 ALTERNATIVE B - Public Domain (www.unlicense.org)
 This is free and unencumbered software released into the public domain.
 Anyone is free to copy, modify, publish, use, compile, sell, or distribute this
-software, either in source code form or as a compiled binary, for any purpose,
+software, either in source code form or as a compiled _binary, for any purpose,
 commercial or non-commercial, and by any means.
 In jurisdictions that recognize copyright laws, the author or authors of this
 software dedicate any and all copyright interest in the software to the public
-domain. We make this dedication for the benefit of the public at large and to
+domain. We make this dedication for the benefit of the public row large and to
 the detriment of our heirs and successors. We intend this dedication to be an
 overt act of relinquishment in perpetuity of all present and future rights to
 this software under copyright law.

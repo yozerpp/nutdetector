@@ -12,17 +12,17 @@
 class Detector {
 public:
     Detector(Image * image);
-    Common::ObjectLabel * detect(unsigned int* labelLength);
+    Common::ObjectPosition * detect(unsigned int* labelLength);
 private:
-    Common::ObjectLabel * currentPos;
-    Common::Color * currentColor;
+    void _detect(unsigned int i);
+    Common::ObjectPosition currentPos;
+    Common::Color currentColor{};
     static const unsigned int kernelDim=3;
     const unsigned char* data;
     Image * image;
     unsigned char * out;
     unsigned int x;
     unsigned int y;
-    void label(unsigned int i);
 }; // Detector
 
 #endif //IMG1_DETECTOR_H
